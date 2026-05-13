@@ -3,6 +3,7 @@ import { BackgroundSchema } from "@/lib/schema";
 import { uploadToStorage } from "@/lib/supabase/storage";
 import { probeMediaFile } from "@/lib/ffmpeg/probe";
 import { ensureBootCleanup } from "@/lib/render/bootCleanup";
+import { applyBgDefaults } from "@/lib/backgroundDefaults";
 import { writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,11 +71,9 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const background = BackgroundSchema.parse({
-    kind,
-    storagePath,
-    durationSec,
-  });
+  const background = BackgroundSchema.parse(
+    applyBgDefaults({ kind, storagePath, durationSec })
+  );
 
   return Response.json(background);
 }
