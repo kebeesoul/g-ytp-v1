@@ -51,8 +51,24 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
 
   const [hydrateError, setHydrateError] = useState<string | null>(null);
   const [hydrateLoading, setHydrateLoading] = useState(!!fromId);
+  const [ffmpegWarning, setFfmpegWarning] = useState<string | null>(null);
 
   const hydratedRef = useRef(false);
+
+  // §15 FFmpeg 미설치 감지 — 부팅 후 1회 체크
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/health");
+        if (!res.ok) {
+          const body = (await res.json()) as { ffmpegError?: string };
+          setFfmpegWarning(body.ffmpegError ?? "FFmpeg를 찾을 수 없습니다. FFMPEG_PATH 환경변수를 확인하세요.");
+        }
+      } catch {
+        // 네트워크 오류 시 무시 (개발 서버 미시작 등)
+      }
+    })();
+  }, []);
 
   // §3.2 복원 보장 — fromId가 있을 때 프로젝트 로드 + hydrate
   useEffect(() => {
@@ -188,6 +204,11 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
 
   return (
     <div className="min-h-full bg-gray-950 px-6 py-8">
+      {ffmpegWarning && (
+        <div className="mx-auto mb-4 max-w-6xl rounded-md border border-yellow-500/40 bg-yellow-950/40 px-4 py-3 text-sm text-yellow-300">
+          ⚠ FFmpeg 미설치: {ffmpegWarning}
+        </div>
+      )}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-2">
         {/* 왼쪽 열: 제목 + 트랙리스트 */}
         <div className="flex flex-col gap-6">
