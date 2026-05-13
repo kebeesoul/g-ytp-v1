@@ -1,5 +1,7 @@
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 import type { AudioConfig } from "@/lib/schema";
+import { activeProcesses } from "@/lib/render/processRegistry";
 import { runFfmpeg } from "./runFfmpeg";
 
 export interface NormalizeAudioOptions {
@@ -43,25 +45,7 @@ export async function normalizeAudio(options: NormalizeAudioOptions): Promise<st
   const { targetLufs, truePeakDb } = audioConfig;
   const lra = 11;
   const loudnormBase = `loudnorm=I=${targetLufs}:TP=${truePeakDb}:LRA=${lra}`;
-
-  let pass1Stderr = "";
-  await runFfmpeg({
-    jobId,
-    maxStderrTailLines: 200,
-    args: [
-      "-y",
-      "-i", inputPath,
-      "-af", `${loudnormBase}:print_format=json`,
-      "-f", "null",
-      "-",
-    ],
-  }).catch((err: unknown) => {
-    if (err instanceof Error) pass1Stderr = err.message;
-    throw err;
-  });
-
-  // runFfmpeg only exposes stderr on failure, so use a dedicated capture for loudnorm pass 1.
-  pass1Stderr = await captureLoudnormStats(jobId, inputPath, loudnormBase);
+  const pass1Stderr = await captureLoudnormStats(jobId, inputPath, loudnormBase);
   const stats = parseLoudnormJson(pass1Stderr);
 
   const filterPass2 = [
@@ -89,13 +73,11 @@ export async function normalizeAudio(options: NormalizeAudioOptions): Promise<st
   return outputPath;
 }
 
-async function captureLoudnormStats(
+function captureLoudnormStats(
   jobId: string | undefined,
   inputPath: string,
   loudnormBase: string
 ): Promise<string> {
-  const { spawn } = await import("node:child_process");
-  const { activeProcesses } = await import("@/lib/render/processRegistry");
   const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
 
   return new Promise<string>((resolve, reject) => {
