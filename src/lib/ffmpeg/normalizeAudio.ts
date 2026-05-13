@@ -1,14 +1,11 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { join } from "node:path";
 import type { AudioConfig } from "@/lib/schema";
-
-const execFileAsync = promisify(execFile);
-const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
+import { runFfmpeg } from "./runFfmpeg";
 
 export interface NormalizeAudioOptions {
-  inputPath: string;   // concat_raw.wav
-  workDir: string;     // workspace/tmp/{jobId}
+  jobId?: string;
+  inputPath: string;
+  workDir: string;
   audioConfig: AudioConfig;
 }
 
@@ -25,40 +22,48 @@ interface LoudnormStats {
   target_offset: string;
 }
 
-// → workspace/tmp/{jobId}/concat.m4a 경로 반환
 export async function normalizeAudio(options: NormalizeAudioOptions): Promise<string> {
-  const { inputPath, workDir, audioConfig } = options;
+  const { jobId, inputPath, workDir, audioConfig } = options;
   const outputPath = join(workDir, "concat.m4a");
 
   if (audioConfig.normalize === "off") {
-    // normalize=off: PCM → AAC 직접 인코딩
-    await execFileAsync(FFMPEG, [
-      "-y",
-      "-i", inputPath,
-      "-c:a", "aac",
-      "-b:a", `${192}k`,
-      outputPath,
-    ], { maxBuffer: 64 * 1024 * 1024 });
+    await runFfmpeg({
+      jobId,
+      args: [
+        "-y",
+        "-i", inputPath,
+        "-c:a", "aac",
+        "-b:a", "192k",
+        outputPath,
+      ],
+    });
     return outputPath;
   }
 
-  // EBU R128 2-pass
   const { targetLufs, truePeakDb } = audioConfig;
   const lra = 11;
   const loudnormBase = `loudnorm=I=${targetLufs}:TP=${truePeakDb}:LRA=${lra}`;
 
-  // Pass 1: 통계 측정 (stderr에서 JSON 파싱)
-  const { stderr: pass1Stderr } = await execFileAsync(FFMPEG, [
-    "-y",
-    "-i", inputPath,
-    "-af", `${loudnormBase}:print_format=json`,
-    "-f", "null",
-    "-",
-  ], { maxBuffer: 64 * 1024 * 1024 });
+  let pass1Stderr = "";
+  await runFfmpeg({
+    jobId,
+    maxStderrTailLines: 200,
+    args: [
+      "-y",
+      "-i", inputPath,
+      "-af", `${loudnormBase}:print_format=json`,
+      "-f", "null",
+      "-",
+    ],
+  }).catch((err: unknown) => {
+    if (err instanceof Error) pass1Stderr = err.message;
+    throw err;
+  });
 
+  // runFfmpeg only exposes stderr on failure, so use a dedicated capture for loudnorm pass 1.
+  pass1Stderr = await captureLoudnormStats(jobId, inputPath, loudnormBase);
   const stats = parseLoudnormJson(pass1Stderr);
 
-  // Pass 2: 측정값 주입 + AAC 인코딩
   const filterPass2 = [
     loudnormBase,
     `measured_I=${stats.input_i}`,
@@ -69,20 +74,60 @@ export async function normalizeAudio(options: NormalizeAudioOptions): Promise<st
     "linear=true",
   ].join(":");
 
-  await execFileAsync(FFMPEG, [
-    "-y",
-    "-i", inputPath,
-    "-af", filterPass2,
-    "-c:a", "aac",
-    "-b:a", "192k",
-    outputPath,
-  ], { maxBuffer: 64 * 1024 * 1024 });
+  await runFfmpeg({
+    jobId,
+    args: [
+      "-y",
+      "-i", inputPath,
+      "-af", filterPass2,
+      "-c:a", "aac",
+      "-b:a", "192k",
+      outputPath,
+    ],
+  });
 
   return outputPath;
 }
 
+async function captureLoudnormStats(
+  jobId: string | undefined,
+  inputPath: string,
+  loudnormBase: string
+): Promise<string> {
+  const { spawn } = await import("node:child_process");
+  const { activeProcesses } = await import("@/lib/render/processRegistry");
+  const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
+
+  return new Promise<string>((resolve, reject) => {
+    const proc = spawn(ffmpeg, [
+      "-y",
+      "-i", inputPath,
+      "-af", `${loudnormBase}:print_format=json`,
+      "-f", "null",
+      "-",
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+
+    if (jobId) activeProcesses.set(jobId, proc);
+    let stderr = "";
+
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on("close", (code) => {
+      if (jobId) activeProcesses.delete(jobId);
+      if (code === 0) resolve(stderr);
+      else reject(new Error(`FFmpeg loudnorm pass failed with code ${code}:\n${stderr}`));
+    });
+
+    proc.on("error", (err) => {
+      if (jobId) activeProcesses.delete(jobId);
+      reject(err);
+    });
+  });
+}
+
 function parseLoudnormJson(stderr: string): LoudnormStats {
-  // FFmpeg이 stderr에 JSON 블록을 { } 형태로 출력
   const match = stderr.match(/\{[\s\S]*?\}/);
   if (!match) {
     throw new Error("normalizeAudio: loudnorm JSON not found in ffmpeg output");
