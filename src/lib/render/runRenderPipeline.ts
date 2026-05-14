@@ -12,7 +12,6 @@ import { renderVideo } from "@/lib/ffmpeg/renderVideo";
 import { extractThumbnail } from "@/lib/ffmpeg/thumbnail";
 import { generateTracklistText } from "@/lib/tracklist";
 import { getJobWorkDir, getJobAudioDir, getFinalOutputPath } from "@/lib/workspace";
-import { computeGlobalProgress, computeEtaSec } from "@/lib/ffmpeg/parseProgress";
 import { activeProcesses } from "./processRegistry";
 import { jobQueue } from "./jobQueue";
 import { cleanupIntermediateFiles } from "./cleanupIntermediateFiles";
@@ -24,7 +23,6 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
   const startTimeMs = Date.now();
 
   try {
-    // ── 잡 + 스냅샷 로드 ────────────────────────────────────────────────────
     const { data: job } = await supabase
       .from("render_jobs")
       .select("*")
@@ -42,7 +40,6 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
 
     let snapshot = project.snapshot as ProjectSnapshot;
 
-    // ── 상태: running ────────────────────────────────────────────────────────
     const now = new Date().toISOString();
     await supabase
       .from("render_jobs")
@@ -51,20 +48,16 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
 
     updateJobQueue(jobId, exportId, "running", 0, null, null);
 
-    // ── STEP A: import 파일 복사 (재익스포트인 경우) ─────────────────────────
     snapshot = await copyImportIfNeeded(exportId, snapshot);
-    // snapshot 업데이트 (storagePath 변경 가능)
     await supabase
       .from("projects")
       .update({ snapshot })
       .eq("id", exportId);
 
-    // ── 워크스페이스 준비 ────────────────────────────────────────────────────
     const workDir = getJobWorkDir(jobId);
     const audioDir = getJobAudioDir(jobId);
     await mkdir(audioDir, { recursive: true });
 
-    // ── STEP B: 음원 다운로드 ────────────────────────────────────────────────
     const audioPaths: string[] = [];
     for (const track of snapshot.tracks) {
       const localName = basename(track.storagePath);
@@ -74,7 +67,6 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       audioPaths.push(localPath);
     }
 
-    // ── 배경 다운로드 ────────────────────────────────────────────────────────
     if (!snapshot.background) throw new Error("background is required");
     const bgLocalName = basename(snapshot.background.storagePath);
     const bgLocalPath = join(workDir, bgLocalName);
@@ -83,8 +75,8 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
 
     updateJobQueue(jobId, exportId, "running", 0.05, null, null);
 
-    // ── STEP B: Phase 1 — concat (progress 0 → 0.10) ─────────────────────────
     const concatRawPath = await concatAudio({
+      jobId,
       audioPaths,
       transition: snapshot.renderConfig.transition,
       workDir,
@@ -92,8 +84,8 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     updateJobQueue(jobId, exportId, "running", 0.10, null, null);
     await flushProgressToDB(jobId, 0.10, null);
 
-    // ── STEP C: Phase 1 — normalize (progress 0.10 → 0.15) ───────────────────
     const concatM4aPath = await normalizeAudio({
+      jobId,
       inputPath: concatRawPath,
       workDir,
       audioConfig: snapshot.renderConfig.audio,
@@ -101,11 +93,9 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     updateJobQueue(jobId, exportId, "running", 0.15, null, null);
     await flushProgressToDB(jobId, 0.15, null);
 
-    // ── STEP D: Phase 2 — 영상 합성 (progress 0.15 → 1.0) ────────────────────
     const outputFormat = snapshot.renderConfig.outputFormat;
     const outputPath = getFinalOutputPath(jobId, outputFormat);
 
-    // DB flush 인터벌 (5초)
     let lastFlush = Date.now();
     const onProgress = async (globalProgress: number, etaSec: number | null) => {
       updateJobQueue(jobId, exportId!, "running", globalProgress, etaSec, null);
@@ -127,14 +117,12 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       onProgress,
     });
 
-    // ── STEP E: 썸네일 추출 + 업로드 ─────────────────────────────────────────
     const thumbLocalPath = join(workDir, "thumbnail.jpg");
     await extractThumbnail(outputPath, thumbLocalPath);
     const thumbBuf = await readFileBuffer(thumbLocalPath);
     const thumbStoragePath = `import/${exportId}/thumbnail.jpg`;
     await uploadToStorage(thumbStoragePath, thumbBuf, "image/jpeg");
 
-    // ── STEP E: tracklist.txt 생성 + 업로드 ──────────────────────────────────
     const tracklistText = generateTracklistText(snapshot);
     const tracklistPath = `export/${exportId}/tracklist.txt`;
     await uploadToStorage(
@@ -143,7 +131,6 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       "text/plain"
     );
 
-    // ── 완료 갱신 ─────────────────────────────────────────────────────────────
     const completedAt = new Date().toISOString();
     await supabase
       .from("render_jobs")
@@ -192,8 +179,6 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
   }
 }
 
-// ─── 헬퍼 ───────────────────────────────────────────────────────────────────
-
 function updateJobQueue(
   jobId: string,
   projectId: string,
@@ -234,7 +219,6 @@ async function flushProgressToDB(
     .eq("id", jobId);
 }
 
-// 재익스포트 시 import 파일 복사 (§3.2, §8 STEP A)
 async function copyImportIfNeeded(
   exportId: string,
   snapshot: ProjectSnapshot

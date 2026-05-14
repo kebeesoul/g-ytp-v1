@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   ProjectRecordSchema,
   ProjectSnapshotSchema,
+  TrackSchema,
   type Background,
   type ProjectSnapshot,
   type Track,
@@ -55,7 +56,6 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
 
   const hydratedRef = useRef(false);
 
-  // §15 FFmpeg 미설치 감지 — 부팅 후 1회 체크
   useEffect(() => {
     (async () => {
       try {
@@ -65,12 +65,11 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
           setFfmpegWarning(body.ffmpegError ?? "FFmpeg를 찾을 수 없습니다. FFMPEG_PATH 환경변수를 확인하세요.");
         }
       } catch {
-        // 네트워크 오류 시 무시 (개발 서버 미시작 등)
+        // Ignore network failures during local development startup.
       }
     })();
   }, []);
 
-  // §3.2 복원 보장 — fromId가 있을 때 프로젝트 로드 + hydrate
   useEffect(() => {
     if (!fromId || hydratedRef.current) return;
     hydratedRef.current = true;
@@ -95,7 +94,6 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
         }
         const snapshot = snap.data;
 
-        // 8개 항목 hydrate (§3.2 복원 보장 표)
         setTitle(snapshot.title);
         setTracks([...snapshot.tracks].sort((a, b) => a.order - b.order));
         setBackground(snapshot.background);
@@ -137,28 +135,32 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
 
   async function handleFilesAdded(files: FileList): Promise<void> {
     const arr = Array.from(files);
+    if (arr.length === 0) return;
+
+    const form = new FormData();
+    form.append("editorSessionId", editorSessionId);
     for (const file of arr) {
-      const form = new FormData();
-      form.append("editorSessionId", editorSessionId);
-      form.append("file", file);
-      try {
-        const res = await fetch("/api/upload", { method: "POST", body: form });
-        if (!res.ok) continue;
-        const raw: unknown = await res.json();
-        const parsed = z.object({
-          id: z.string().uuid(),
-          filename: z.string(),
-          storagePath: z.string(),
-          artist: z.string(),
-          title: z.string(),
-          durationSec: z.number(),
-        }).safeParse(raw);
-        if (!parsed.success) continue;
-        const track: Track = { ...parsed.data, order: tracks.length + arr.indexOf(file) };
-        setTracks((prev) => [...prev, track]);
-      } catch {
-        // 개별 파일 오류는 무시
-      }
+      form.append("files", file);
+    }
+
+    try {
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      if (!res.ok) return;
+
+      const raw: unknown = await res.json();
+      const parsed = z.array(TrackSchema).safeParse(raw);
+      if (!parsed.success) return;
+
+      setTracks((prev) => {
+        const startOrder = prev.length;
+        const nextTracks = parsed.data.map((track, index) => ({
+          ...track,
+          order: startOrder + index,
+        }));
+        return [...prev, ...nextTracks];
+      });
+    } catch {
+      // Keep the editor responsive; API errors are handled by retrying upload.
     }
   }
 
@@ -210,7 +212,6 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
         </div>
       )}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* 왼쪽 열: 제목 + 트랙리스트 */}
         <div className="flex flex-col gap-6">
           <TitleInput value={title} onChange={setTitle} />
 
@@ -226,7 +227,6 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
           <AudioPlayer storagePath={activeStoragePath} trackId={activeTrackId} />
         </div>
 
-        {/* 오른쪽 열: 배경 + 설정 + Export */}
         <div className="flex flex-col gap-6">
           <BackgroundPicker
             editorSessionId={editorSessionId}
@@ -234,11 +234,9 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             onChange={setBackground}
           />
 
-          {/* Render Config */}
           <div className="flex flex-col gap-3 rounded-md border border-gray-700 bg-gray-900 p-4">
             <span className="text-sm font-medium text-gray-300">렌더 설정</span>
 
-            {/* Transition */}
             <div className="flex flex-col gap-1">
               <span className="text-xs text-gray-400">Transition</span>
               <div className="flex gap-4">
@@ -257,7 +255,6 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
               </div>
             </div>
 
-            {/* Overlay 표시 모드 */}
             <div className="flex flex-col gap-1">
               <span className="text-xs text-gray-400">Overlay 표시</span>
               <div className="flex gap-3 flex-wrap">
@@ -276,7 +273,6 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
               </div>
             </div>
 
-            {/* 해시태그 */}
             <div className="flex flex-col gap-1">
               <span className="text-xs text-gray-400">해시태그 (쉼표 구분)</span>
               <input

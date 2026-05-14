@@ -14,7 +14,15 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "invalid editorSessionId" }, { status: 400 });
   }
 
-  const files = formData.getAll("files") as File[];
+  const files = formData
+    .getAll("files")
+    .filter((entry): entry is File => entry instanceof File && !!entry.name);
+
+  const singleFile = formData.get("file");
+  if (singleFile instanceof File && singleFile.name) {
+    files.push(singleFile);
+  }
+
   if (files.length === 0) {
     return Response.json({ error: "no files provided" }, { status: 400 });
   }
@@ -23,13 +31,8 @@ export async function POST(req: Request): Promise<Response> {
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
-    if (!file.name) {
-      return Response.json({ error: "invalid file entry" }, { status: 400 });
-    }
-
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // music-metadata 파싱
     let artist = "";
     let title = "";
     let durationSec = 0;
@@ -40,10 +43,9 @@ export async function POST(req: Request): Promise<Response> {
       title = meta.common.title ?? "";
       durationSec = meta.format.duration ?? 0;
     } catch {
-      // 파싱 실패 시 파일명 fallback (§15)
+      // Fall back to filename parsing below.
     }
 
-    // 파일명 fallback
     const baseName = file.name.replace(/\.[^.]+$/, "");
     if (!artist && !title) {
       const parts = baseName.split(" - ");
