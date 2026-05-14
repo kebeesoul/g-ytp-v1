@@ -33,6 +33,24 @@ const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
   hwaccel: "videotoolbox",
 };
 
+function compareFilename(a: { filename: string }, b: { filename: string }): number {
+  return a.filename.localeCompare(b.filename, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function compareFileName(a: File, b: File): number {
+  return a.name.localeCompare(b.name, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function withSequentialOrder(tracks: Track[]): Track[] {
+  return tracks.map((track, index) => ({ ...track, order: index }));
+}
+
 export default function EditorPage({ searchParams }: EditorPageProps) {
   const params = use(searchParams);
   const fromId = typeof params.from === "string" ? params.from : null;
@@ -133,8 +151,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
     return parsed.data;
   }
 
-  async function handleFilesAdded(files: FileList): Promise<void> {
-    const arr = Array.from(files);
+  async function handleFilesAdded(files: FileList | File[]): Promise<void> {
+    const arr = Array.from(files).sort(compareFileName);
     if (arr.length === 0) return;
 
     const form = new FormData();
@@ -143,25 +161,22 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
       form.append("files", file);
     }
 
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      if (!res.ok) return;
-
-      const raw: unknown = await res.json();
-      const parsed = z.array(TrackSchema).safeParse(raw);
-      if (!parsed.success) return;
-
-      setTracks((prev) => {
-        const startOrder = prev.length;
-        const nextTracks = parsed.data.map((track, index) => ({
-          ...track,
-          order: startOrder + index,
-        }));
-        return [...prev, ...nextTracks];
-      });
-    } catch {
-      // Keep the editor responsive; API errors are handled by retrying upload.
+    const res = await fetch("/api/upload", { method: "POST", body: form });
+    const raw: unknown = await res.json().catch(() => null);
+    if (!res.ok) {
+      const body = raw as { error?: string } | null;
+      throw new Error(body?.error ?? `음원 업로드 실패: ${res.status}`);
     }
+
+    const parsed = z.array(TrackSchema).safeParse(raw);
+    if (!parsed.success) {
+      throw new Error("서버 응답 형식 오류");
+    }
+
+    const sortedNewTracks = [...parsed.data].sort(compareFilename);
+    setTracks((prev) =>
+      withSequentialOrder([...prev, ...sortedNewTracks].sort(compareFilename))
+    );
   }
 
   function handlePlay(id: string) {
