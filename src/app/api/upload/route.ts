@@ -4,6 +4,21 @@ import { TrackSchema } from "@/lib/schema";
 import { uploadToStorage } from "@/lib/supabase/storage";
 import { ensureBootCleanup } from "@/lib/render/bootCleanup";
 
+const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "flac", "ogg"]);
+
+function compareFileName(a: File, b: File): number {
+  return a.name.localeCompare(b.name, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function isAudioFile(file: File): boolean {
+  if (file.type.startsWith("audio/")) return true;
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  return !!ext && AUDIO_EXTENSIONS.has(ext);
+}
+
 export async function POST(req: Request): Promise<Response> {
   await ensureBootCleanup();
 
@@ -27,10 +42,19 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "no files provided" }, { status: 400 });
   }
 
+  const invalidFiles = files.filter((file) => !isAudioFile(file));
+  if (invalidFiles.length > 0) {
+    return Response.json(
+      { error: `unsupported audio file type: ${invalidFiles.map((f) => f.name).join(", ")}` },
+      { status: 415 }
+    );
+  }
+
+  const sortedFiles = [...files].sort(compareFileName);
   const tracks = [];
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
+  for (let i = 0; i < sortedFiles.length; i++) {
+    const file = sortedFiles[i];
     const buffer = Buffer.from(await file.arrayBuffer());
 
     let artist = "";
