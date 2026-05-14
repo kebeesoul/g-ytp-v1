@@ -1,6 +1,10 @@
 import { supabaseServer } from "./server";
 
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET ?? "g-ytp-v1";
+const PUBLIC_BUCKET =
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ??
+  process.env.SUPABASE_STORAGE_BUCKET ??
+  "g-ytp-v1";
 
 export async function uploadToStorage(
   path: string,
@@ -42,3 +46,7 @@ export async function removeFromStorage(paths: string[]): Promise<void> {
   if (error) throw new Error(`Storage remove failed: ${error.message}`);
 }
 
+export function getPublicUrl(path: string): string {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  return `${url}/storage/v1/object/public/${PUBLIC_BUCKET}/${path}`;
+}
