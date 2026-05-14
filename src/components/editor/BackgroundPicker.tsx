@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BackgroundSchema } from "@/lib/schema";
 import type { Background } from "@/lib/schema";
-import { getPublicUrl } from "@/lib/supabase/storage";
+import { getPublicUrl } from "@/lib/supabase/publicUrl";
 
 interface BackgroundPickerProps {
   editorSessionId: string;

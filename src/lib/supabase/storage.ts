@@ -42,7 +42,3 @@ export async function removeFromStorage(paths: string[]): Promise<void> {
   if (error) throw new Error(`Storage remove failed: ${error.message}`);
 }
 
-export function getPublicUrl(path: string): string {
-  const { data } = supabaseServer.storage.from(BUCKET).getPublicUrl(path);
-  return data.publicUrl;
-}
