@@ -15,9 +15,11 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { Track } from "@/lib/schema";
 import { TrackItem } from "./TrackItem";
+
+const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "flac", "ogg"]);
 
 interface TrackListProps {
   tracks: Track[];
@@ -25,7 +27,13 @@ interface TrackListProps {
   onEdit: (id: string, artist: string, title: string) => void;
   onDelete: (id: string) => void;
   onPlay: (id: string) => void;
-  onFilesAdded: (files: FileList) => void;
+  onFilesAdded: (files: File[]) => Promise<void> | void;
+}
+
+function isAudioFile(file: File): boolean {
+  if (file.type.startsWith("audio/")) return true;
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  return !!ext && AUDIO_EXTENSIONS.has(ext);
 }
 
 export function TrackList({
@@ -37,6 +45,10 @@ export function TrackList({
   onFilesAdded,
 }: TrackListProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [dropError, setDropError] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -60,12 +72,68 @@ export function TrackList({
     onReorder(reordered);
   }
 
-  function handleDropZoneDrop(e: React.DragEvent) {
-    e.preventDefault();
-    if (e.dataTransfer.files.length > 0) {
-      onFilesAdded(e.dataTransfer.files);
+  async function ingestFiles(files: File[]): Promise<void> {
+    if (isUploading) return;
+
+    const accepted = files.filter(isAudioFile);
+    const rejectedCount = files.length - accepted.length;
+
+    if (rejectedCount > 0) {
+      setDropError(`오디오가 아닌 파일 ${rejectedCount}개는 추가하지 않았습니다.`);
+    } else {
+      setDropError(null);
+    }
+
+    if (accepted.length === 0) return;
+
+    setIsUploading(true);
+    try {
+      await onFilesAdded(accepted);
+    } catch (err) {
+      setDropError(err instanceof Error ? err.message : "음원 ingest에 실패했습니다.");
+    } finally {
+      setIsUploading(false);
     }
   }
+
+  function handleDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isUploading || !Array.from(e.dataTransfer.types).includes("Files")) return;
+    dragDepthRef.current += 1;
+    setIsDraggingFiles(true);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isUploading) e.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFiles(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsDraggingFiles(false);
+    void ingestFiles(Array.from(e.dataTransfer.files));
+  }
+
+  const dropzoneLabel = isUploading
+    ? "음원 ingest 중..."
+    : isDraggingFiles
+      ? "여기에 음원 파일 놓기"
+      : "+ 음원 추가 (클릭 또는 드래그)";
+
+  const dropzoneClass = isDraggingFiles
+    ? "border-blue-400 bg-blue-500/10 text-blue-200"
+    : "border-gray-600 text-gray-500 hover:border-gray-400 hover:text-gray-300";
 
   return (
     <div className="flex flex-col gap-2">
@@ -93,26 +161,32 @@ export function TrackList({
         </SortableContext>
       </DndContext>
 
-      {/* 음원 추가 dropzone */}
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDropZoneDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className="flex cursor-pointer items-center justify-center rounded-md border-2 border-dashed border-gray-600 py-4 text-sm text-gray-500 transition hover:border-gray-400 hover:text-gray-300"
+      <button
+        type="button"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => {
+          if (!isUploading) fileInputRef.current?.click();
+        }}
+        disabled={isUploading}
+        className={`flex cursor-pointer items-center justify-center rounded-md border-2 border-dashed py-4 text-sm transition disabled:cursor-wait disabled:opacity-70 ${dropzoneClass}`}
       >
-        + 음원 추가 (클릭 또는 드래그)
-      </div>
+        {dropzoneLabel}
+      </button>
       <input
         ref={fileInputRef}
         type="file"
-        accept="audio/*"
+        accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg"
         multiple
         className="hidden"
         onChange={(e) => {
-          if (e.target.files) onFilesAdded(e.target.files);
+          if (e.target.files) void ingestFiles(Array.from(e.target.files));
           e.target.value = "";
         }}
       />
+      {dropError && <p className="text-xs text-red-400">{dropError}</p>}
     </div>
   );
 }
