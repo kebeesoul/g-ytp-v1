@@ -22,7 +22,9 @@ export function getSupabaseServer(): SupabaseClient {
 }
 
 export const supabaseServer = new Proxy({} as SupabaseClient, {
-  get(_target, prop, receiver) {
-    return Reflect.get(getSupabaseServer(), prop, receiver);
+  get(_target, prop) {
+    const client = getSupabaseServer();
+    const value = Reflect.get(client, prop, client);
+    return typeof value === "function" ? value.bind(client) : value;
   },
 });
