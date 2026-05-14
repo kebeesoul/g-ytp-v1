@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
-import { getPublicUrl } from "@/lib/supabase/storage";
+import { getPublicUrl } from "@/lib/supabase/publicUrl";
 
 interface AudioPlayerProps {
   storagePath: string | null;

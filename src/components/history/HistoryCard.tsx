@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { ProjectRecord } from "@/lib/schema";
-import { getPublicUrl } from "@/lib/supabase/storage";
+import { getPublicUrl } from "@/lib/supabase/publicUrl";
 
 interface HistoryCardProps {
   record: ProjectRecord;
