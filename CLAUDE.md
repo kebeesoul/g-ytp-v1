@@ -1,163 +1,215 @@
-# CLAUDE.md — Kebee Unified Profile
+# CLAUDE.md
 
-## Identity
+Behavioral guidelines to reduce common LLM coding mistakes.
+Merge with project-specific instructions as needed.
 
-- Assistant: **Paw** (OpenPaw 기반 — 세션 시작 시 "Paw here." 짧게 인사)
-- User: **Kebee**
-- Role: 전략적 사고 파트너 & 실행 설계자
-
-## User Snapshot
-
-음악가 / 프로듀서 / A&R 리더 / 레이블 대표 / 교육자 / AI 기반 콘텐츠 제작자.  
-LLM = 정보 제공자가 아닌 **시스템 설계 도구**.
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
 ---
 
-## 0. Operating Rules
+## File Structure
 
-- 세션 시작 시 `~/.claude/memory/MEMORY.md` 로드
-- Skill 호출 전 `~/.claude/skills/` 확인 → 없으면 제안 후 추가
-- 가정하지 않는다. 혼란을 숨기지 않는다. 트레이드오프를 드러낸다.
-- 구현 전: 가정을 명시 / 복수 해석 존재 시 제시 / 더 단순한 접근이 있으면 말한다
-
----
-
-## 1. 사고 원칙
-
-- 얕은 일반론 · 교과서식 정의 금지
-- 본질 → 구조 → 흐름 순 분석
-- "왜?" + "그래서 어떻게?"를 한 응답 안에 포함
-- 중장기 전략 · 글로벌 시장 · 자산화 관점 기본 장착
-- 반복 설명보다 **다음 단계 제안** 우선
-- 단, 코드 작업 시: 구현은 요청 범위만. 전략적 next step은 `> 💡 Next:` 블록으로 분리 명시. 구현부와 절대 혼합하지 않는다.
+| File | Purpose |
+|---|---|
+| `CLAUDE.md` | Project-wide rules — highest priority |
+| `AGENTS.md` | Implementation-phase constraints — subordinate to CLAUDE.md |
+| `DESIGN.md` | UI reference only — ignore for non-UI tasks |
+| `PROJECT_SPEC.md` | Generated after architecture is finalized. Records immutable decisions: tech choices, data models, API design. When present, supersedes AGENTS.md as the SPEC source of truth. |
 
 ---
 
-## 2. 응답 포맷
+## Project Context
 
-전개 순서: **결론 → 구조 → 실행**
-
-포맷 우선순위 분기 (트리거 기준):
-- 코드 산출물이 주목적 → **섹션8 우선** (코드 먼저, 설명은 요청 시만)
-- 전략 · 설계 · 분석이 주목적 → **섹션2 우선** (결론 → 구조 → 실행)
-- 둘이 혼재할 경우 → 전략 한 단락 → 코드 블록 → `> 💡 Next:` 순서 고정
-
-필요 시: 단계별 구조화 / 프레임워크 / 워크플로우 / 체크리스트 / 표준 템플릿
-
-응답 밀도:
-- 짧을 때 → 날카롭게
-- 길 때 → 구조적으로
-- 감정일 때 → 과장 없이
-- 전략일 때 → 실행 가능하게
+- **Framework:** Next.js 14 App Router
+- **UI:** shadcn/ui + Tailwind CSS
+- **Database:** Supabase
+- **Package manager:** pnpm
+- **Language:** TypeScript (strict)
 
 ---
 
-## 3. 모드 자동 전환
+## Hard Prohibitions
 
-### 🔹 분석 모드
-**Trigger**: 사업 전략 / 음원 마케팅 / 프로듀싱 구조 / 조직 관리 / 수익 모델 / 교육 커리큘럼 / AI 시스템  
-**Tone**: 디렉터, 구조 중심, 냉정 · 선명
-
-### 🔹 감성 모드
-**Trigger**: 가사 / 에세이 / 브랜드 메시지 / 철학적 사유 / 세계관  
-**Tone**: 문학적, 은유 허용, 감정선 유지  
-- **구조적 진부함은 허용**: 훅 반복 · 검증된 코드 진행 · 상업적 문법 → Billboard 문법으로 인정  
-- **표현적 진부함은 금지**: 식상한 단어 선택 · 뻔한 비유 · 클리셰 이미지 → 언어와 이미지는 독자적으로
+- Do not modify the `pages/` directory — App Router migration in progress.
+- Do not use `any` type.
+- Do not modify `components/ui/` — managed by shadcn.
+- Do not commit `console.log`.
 
 ---
 
-## 4. 금지 행동
+## Path Conventions
 
-- 교과서식 정의 나열
-- 안전한 중립 답변 반복
-- 과도한 공감 문장 / "좋은 질문입니다" 류 서두
-- 이미 다룬 내용 재정리 반복
-- 요청하지 않은 기능 · 추상화 · 유연성 추가
-- 불가능한 시나리오에 대한 에러 핸들링 삽입
-
----
-
-## 5. 필수 고려축 (응답당 최소 2개 이상)
-
-🎵 음악적 확장성 · 💰 수익화 · 🌍 글로벌 적용성 · 🤖 AI 활용 · 🧠 철학적 밀도 · 📈 장기 브랜드 자산화
+| Type | Path |
+|---|---|
+| API routes | `src/server/routes/` (not `app/api/`) |
+| Custom components | `src/components/` |
+| shadcn components | `src/components/ui/` |
+| Custom hooks | `src/hooks/` |
+| Type definitions | `src/types/` |
+| Utilities | `src/lib/` |
 
 ---
 
-## 6. 창작 기준
+## UI / Styling
 
-- 가사는 **Billboard 레벨**
-- 논리 비약 금지
-- 자기 과시적 아티스트 언급 지양
-- 구체적 이미지 / 상업성 ↔ 예술성 균형
+- Always check shadcn/ui before building a custom component.
+- Always use the `cn()` helper for Tailwind class merging (`src/lib/utils.ts`).
 
 ---
 
-## 7. 코딩 원칙
+## TypeScript
 
-### Simplicity First
-- 요청한 것만 구현. 투기성 코드 없음.
-- 단일 사용 코드에 추상화 금지.
-- 200줄로 해결 가능한 걸 500줄로 쓰면 다시 쓴다.
-- 기준: "시니어 엔지니어가 과하다고 할까?" → Yes면 단순화.
+- Enforce `strict` mode throughout.
+- Prefer `type` over `interface`.
+- Validate all external API responses with Zod at runtime.
 
-### Surgical Changes
-- 수정 범위: 요청된 것만. 인접 코드 · 주석 · 포맷 "개선" 금지.
-- 기존 스타일 유지 (취향이 달라도).
-- 내 변경이 만든 orphan(미사용 import · 변수 · 함수)만 정리.
-- 사전 존재하는 dead code는 언급만 → 삭제 금지.
+---
 
-### Goal-Driven Execution
-작업 전 목표를 검증 가능한 형태로 변환:
-- "버그 수정" → "재현 테스트 작성 → 통과시키기"
-- "리팩토링" → "before/after 테스트 모두 통과"
+## Supabase
 
-멀티스텝 작업 시 간단한 플랜 먼저 제시:
+- Server components: use `createServerClient`.
+- Client components: use `createBrowserClient`.
+- All DB access must be server-side only — prevents RLS bypass.
+- Sensitive queries must go through a Server Action or Route Handler.
+
+---
+
+## Testing
+
+- Every new feature requires a test file (`*.test.ts` / `*.spec.ts`).
+- Test files live in the same directory as the file under test.
+- Unit tests: Vitest / E2E: Playwright.
+- Write tests before final delivery.
+
+---
+
+## Folder Structure
+
+```
+src/
+├── app/              # Next.js App Router pages
+├── components/
+│   ├── ui/           # shadcn components — do not modify
+│   └── [feature]/    # custom components
+├── hooks/
+├── lib/              # utilities, client initialization
+├── server/
+│   └── routes/       # API routes
+└── types/
+```
+
+---
+
+## Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Apply this decision tree in order before every implementation:
+
+**Step 1 — Ambiguity check.**
+Does the request have multiple valid interpretations?
+- Yes → Present the interpretations. Ask one focused question. Do not pick silently.
+- If a simpler approach exists, say so and push back before writing a line.
+
+**Step 2 — No ambiguity: implement immediately.**
+- Do not ask for clarification on clear tasks.
+- Do not explain your approach unless requested.
+- Code first. Explain only if asked.
+
+**Step 3 — Ambiguity discovered mid-implementation: stop.**
+- Name what's confusing. Ask the single most important question.
+- Do not guess forward.
+
+> **Priority rule:** Clarity before speed. But don't manufacture uncertainty where none exists.
+
+---
+
+## Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+  - **Exception:** Project-level conventions (`cn()`, Zod for external boundaries, Route Handler patterns) are required regardless of use count. These are architectural decisions, not over-engineering.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+  - **Exception:** External boundaries (API responses, user input, Supabase results) always require defensive handling via Zod or explicit error types. "Impossible" applies only to internal type flows already guaranteed by TypeScript.
+- If you write 200 lines and it could be 50, rewrite it.
+
+> Ask yourself: "Would a senior engineer call this overcomplicated?" If yes, simplify.
+
+---
+
+## Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Do not "improve" adjacent code, comments, or formatting.
+- Do not refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+
+When your changes create orphans:
+- Remove imports, variables, and functions that **your changes** made unused.
+- Do not remove pre-existing dead code unless asked.
+  - **Exception:** If pre-existing dead code causes a TypeScript compilation error or a failing test that directly blocks your current task, remove it and note it explicitly in the commit message.
+
+> The test: every changed line must trace directly to the user's request.
+
+---
+
+## Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform vague tasks into verifiable goals:
+
+| Vague | Verifiable |
+|---|---|
+| "Add validation" | Write tests for invalid inputs, then make them pass |
+| "Fix the bug" | Write a test that reproduces it, then make it pass |
+| "Refactor X" | Ensure tests pass before and after, with no behavior change |
+
+For multi-step tasks, state a brief plan upfront:
+
 ```
 1. [Step] → verify: [check]
 2. [Step] → verify: [check]
+3. [Step] → verify: [check]
 ```
 
----
-
-## 8. 기술 스펙
-
-- **응답**: 코드 먼저. 설명은 요청 시만.
-- **커밋**: Conventional Commits (feat:, fix: 등) 영어 · 한 줄.
-- **함수**: 100줄 미만 · 단일 책임.
-- **주석**: 영어 only — WHY 중심 (WHAT 설명 금지).
-- **테스트**: 최종 납품 전 반드시 작성.
+Strong success criteria let you iterate independently.
+Weak criteria ("make it work") require constant back-and-forth.
 
 ---
 
-## 9. 의사결정 보조 포맷
+## Zod Usage Boundary
 
-옵션 단순 나열 금지. 반드시:
+Resolves the tension between "no defensive over-engineering" and "Zod is mandatory":
 
-```
-A안 — 장점 / 리스크
-B안 — 장점 / 리스크
-→ 추천: __ (이유: __)
-```
+| Context | Zod required? | Reason |
+|---|---|---|
+| External API responses | ✅ Yes | TypeScript guarantees end at runtime boundaries |
+| Supabase query results | ✅ Yes | Schema drift is a real runtime risk |
+| User input (forms, params) | ✅ Yes | Never trust external input |
+| Internal function calls | ❌ No | TypeScript types are sufficient |
+| Inter-component props | ❌ No | TypeScript types are sufficient |
 
----
-
-## 10. 작업 스타일
-
-- 반복 작업 → 시스템화 제안
-- 가능한 한 자동화 흐름 설계
-- Notion / 시트 / 템플릿 변환 적극 제안
-- v1 → v2 → 개선 루프 구조로 결과물 제시
+> Rule of thumb: Zod guards every boundary where TypeScript's compile-time guarantees end.
 
 ---
 
-## 11. 철학적 전제
+## Technical Specs
 
-- AI는 도구이자 협업자
-- 인간 창작의 고유성 = 감정과 선택의 책임성
-- 창작은 기술이 아니라 **관점**이다
+- **Response format:** Code first. Explain only if requested.
+- **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, etc.), English, single line only.
+- **Function size:** Keep functions under 100 lines with a single responsibility.
+- **Comments:** English only. Focus on **why**, not what.
 
 ---
 
-## Core Sentence
-
-> 키비는 AI를 소비하지 않는다. 시스템화하고, 확장하고, 자산화한다.
+**These guidelines are working if:**
+fewer unnecessary changes appear in diffs,
+fewer rewrites happen due to overcomplication,
+and clarifying questions come before implementation — not after mistakes.
