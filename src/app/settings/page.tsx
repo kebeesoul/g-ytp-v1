@@ -10,13 +10,17 @@ export default function SettingsPage() {
   const [presets, setPresets] = useState<(OverlayPreset | null)[]>(Array(6).fill(null));
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/overlay-presets")
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`서버 오류 (${r.status})`))))
       .then((data: unknown) => {
         const result = z.array(OverlayPresetSchema).safeParse(data);
-        if (!result.success) return;
+        if (!result.success) {
+          setFetchError("프리셋 데이터 형식 오류");
+          return;
+        }
         const slots: (OverlayPreset | null)[] = Array(6).fill(null);
         for (const preset of result.data) {
           const match = /^slot-(\d)$/.exec(preset.id);
@@ -24,7 +28,9 @@ export default function SettingsPage() {
         }
         setPresets(slots);
       })
-      .catch(() => {})
+      .catch((err: unknown) => {
+        setFetchError(err instanceof Error ? err.message : "프리셋 로드 실패");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -45,6 +51,8 @@ export default function SettingsPage() {
 
         {loading ? (
           <p className="text-sm text-gray-400">불러오는 중...</p>
+        ) : fetchError ? (
+          <p className="text-sm text-red-400">오류: {fetchError}</p>
         ) : (
           <div className="grid grid-cols-[180px_1fr] gap-6">
             {/* Sidebar */}

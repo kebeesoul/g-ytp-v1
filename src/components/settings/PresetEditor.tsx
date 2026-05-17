@@ -297,18 +297,30 @@ function NumInput({
       min={min}
       max={max}
       step={step}
-      onChange={(e) => onChange(parseFloat(e.target.value))}
+      onChange={(e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v)) onChange(v);
+      }}
       className={inputCls}
     />
   );
 }
 
 function ColorInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  // Derive a hex value the color picker can display — strip alpha from rgba if needed.
+  const pickerValue = (() => {
+    const rgba = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (rgba) {
+      return `#${[rgba[1], rgba[2], rgba[3]].map((n) => parseInt(n).toString(16).padStart(2, "0")).join("")}`;
+    }
+    return value.startsWith("#") ? value : "#000000";
+  })();
+
   return (
     <div className="flex items-center gap-2">
       <input
         type="color"
-        value={value.startsWith("rgba") ? "#000000" : value}
+        value={pickerValue}
         onChange={(e) => onChange(e.target.value)}
         className="h-8 w-10 cursor-pointer rounded border border-gray-600 bg-transparent p-0.5"
       />

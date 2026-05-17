@@ -79,15 +79,19 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [hydrateError, setHydrateError] = useState<string | null>(null);
   const [hydrateLoading, setHydrateLoading] = useState(!!fromId);
   const [ffmpegWarning, setFfmpegWarning] = useState<string | null>(null);
+  const [presetLoadWarning, setPresetLoadWarning] = useState<string | null>(null);
 
   const hydratedRef = useRef(false);
 
   useEffect(() => {
     fetch("/api/overlay-presets")
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`서버 오류 (${r.status})`))))
       .then((data: unknown) => {
         const result = z.array(OverlayPresetSchema).safeParse(data);
-        if (!result.success) return;
+        if (!result.success) {
+          setPresetLoadWarning("오버레이 프리셋 데이터 형식 오류");
+          return;
+        }
         const slots: (OverlayPreset | null)[] = Array(6).fill(null);
         for (const preset of result.data) {
           const match = /^slot-(\d)$/.exec(preset.id);
@@ -99,7 +103,9 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
           return result.data[0]?.id ?? prev;
         });
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        setPresetLoadWarning(err instanceof Error ? err.message : "오버레이 프리셋 로드 실패");
+      });
   }, []);
 
   useEffect(() => {
@@ -263,6 +269,11 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
       {ffmpegWarning && (
         <div className="mx-auto mb-4 max-w-6xl rounded-md border border-yellow-500/40 bg-yellow-950/40 px-4 py-3 text-sm text-yellow-300">
           ⚠ FFmpeg 미설치: {ffmpegWarning}
+        </div>
+      )}
+      {presetLoadWarning && (
+        <div className="mx-auto mb-4 max-w-6xl rounded-md border border-yellow-500/40 bg-yellow-950/40 px-4 py-3 text-sm text-yellow-300">
+          ⚠ 오버레이 프리셋: {presetLoadWarning}
         </div>
       )}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-2">
