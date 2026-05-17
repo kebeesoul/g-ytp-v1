@@ -30,7 +30,7 @@ export type Background = z.infer<typeof BackgroundSchema>;
 export const OverlayPresetSchema = z.object({
   id: z.string(),
   version: z.number().int().positive(),
-  renderer: z.enum(["drawtext", "png_card"]).default("drawtext"),
+  renderer: z.enum(["drawtext", "png_card"]).default("png_card"),
 
   layout: z.object({
     anchor: z.enum([

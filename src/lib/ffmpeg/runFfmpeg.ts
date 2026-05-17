@@ -11,7 +11,7 @@ export interface RunFfmpegOptions {
 }
 
 export function runFfmpeg(options: RunFfmpegOptions): Promise<void> {
-  const { jobId, args, maxStderrTailLines = 10, onStdout } = options;
+  const { jobId, args, maxStderrTailLines = 30, onStdout } = options;
 
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });

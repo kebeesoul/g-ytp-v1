@@ -44,7 +44,7 @@ export function rowToPreset(row: PresetRow): OverlayPreset | null {
   const result = OverlayPresetSchema.safeParse({
     id: row.id,
     version: row.version,
-    renderer: row.renderer,
+    renderer: "png_card",  // drawtext eval is unreliable; all user presets use png_card
     layout: {
       anchor: row.anchor,
       x: row.offset_x,
