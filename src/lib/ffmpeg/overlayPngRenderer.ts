@@ -122,12 +122,3 @@ export function buildPngCardOverlayLines(
   return lines;
 }
 
-// Legacy stub — kept so overlayCompiler.ts import does not break.
-// png_card overlays are handled via generatePngCards + buildPngCardOverlayLines in renderVideo.
-export function compilePngCardFilters(
-  _track: Track,
-  _timing: { skip: false; tStart: number; tEnd: number; fadeOut: boolean },
-  _preset: OverlayPreset
-): string[] {
-  throw new Error("compilePngCardFilters: use generatePngCards + buildPngCardOverlayLines instead");
-}

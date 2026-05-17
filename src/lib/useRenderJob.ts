@@ -19,8 +19,10 @@ export interface UseRenderJobResult {
   jobId: string | null;
   status: JobStatus | null;
   submitting: boolean;
+  cancelling: boolean;
   error: string | null;
   startRender: (snapshot: ProjectSnapshot, exportId: string) => Promise<void>;
+  cancelRender: () => Promise<void>;
   clear: () => void;
 }
 
@@ -29,6 +31,7 @@ export function useRenderJob(): UseRenderJobResult {
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<JobStatus | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -139,5 +142,16 @@ export function useRenderJob(): UseRenderJobResult {
     setError(null);
   }, []);
 
-  return { jobId, status, submitting, error, startRender, clear };
+  const cancelRender = useCallback(async (): Promise<void> => {
+    if (!jobId) return;
+    setCancelling(true);
+    try {
+      await fetch(`/api/render-cancel/${jobId}`, { method: "POST" });
+    } finally {
+      setCancelling(false);
+      clear();
+    }
+  }, [jobId, clear]);
+
+  return { jobId, status, submitting, cancelling, error, startRender, cancelRender, clear };
 }

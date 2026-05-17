@@ -22,6 +22,43 @@ export interface RenderVideoOptions {
   workDir: string;
   startTimeMs: number;
   onProgress?: (globalProgress: number, etaSec: number | null) => void;
+  /** Pre-computed PNG card specs from preparePngCardSpecs(). Skip regeneration if provided. */
+  pngCardSpecs?: PngCardSpec[] | null;
+}
+
+/**
+ * Build and generate PNG card overlays for the given snapshot.
+ * Returns null when the drawtext path or displayMode="0" is active.
+ * Safe to run concurrently with audio downloading/processing.
+ */
+export async function preparePngCardSpecs(
+  snapshot: ProjectSnapshot,
+  workDir: string
+): Promise<PngCardSpec[] | null> {
+  const { tracks, renderConfig } = snapshot;
+  const { transition, overlay } = renderConfig;
+  const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
+
+  if (preset.renderer !== "png_card" || overlay.displayMode === "0") return null;
+
+  const timings = computeTrackTimings(tracks, transition);
+  const trackStartSecs = timings.map((t) => t.startSec);
+
+  const specs: PngCardSpec[] = [];
+  for (let i = 0; i < tracks.length; i++) {
+    const timing = resolveOverlayTimings(trackStartSecs[i], tracks[i].durationSec, overlay.displayMode);
+    if (timing.skip) continue;
+    specs.push({
+      localPath: join(workDir, `card_${i}.png`),
+      track: tracks[i],
+      tStart: timing.tStart,
+      tEnd: timing.tEnd,
+      fadeOut: timing.fadeOut,
+    });
+  }
+
+  await generatePngCards(specs, preset);
+  return specs;
 }
 
 export async function renderVideo(options: RenderVideoOptions): Promise<void> {
@@ -62,21 +99,27 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   let extraInputs: string[] = [];
 
   if (preset.renderer === "png_card" && overlay.displayMode !== "0") {
-    // Pre-render one transparent PNG per track, then overlay with fade
-    const specs: PngCardSpec[] = [];
-    for (let i = 0; i < tracks.length; i++) {
-      const timing = resolveOverlayTimings(trackStartSecs[i], tracks[i].durationSec, overlay.displayMode);
-      if (timing.skip) continue;
-      specs.push({
-        localPath: join(workDir, `card_${i}.png`),
-        track: tracks[i],
-        tStart: timing.tStart,
-        tEnd: timing.tEnd,
-        fadeOut: timing.fadeOut,
-      });
+    // Use pre-computed specs (from preparePngCardSpecs run concurrently with downloads),
+    // or fall back to generating them inline.
+    let specs: PngCardSpec[];
+    if (options.pngCardSpecs !== undefined && options.pngCardSpecs !== null) {
+      specs = options.pngCardSpecs;
+    } else {
+      const built: PngCardSpec[] = [];
+      for (let i = 0; i < tracks.length; i++) {
+        const timing = resolveOverlayTimings(trackStartSecs[i], tracks[i].durationSec, overlay.displayMode);
+        if (timing.skip) continue;
+        built.push({
+          localPath: join(workDir, `card_${i}.png`),
+          track: tracks[i],
+          tStart: timing.tStart,
+          tEnd: timing.tEnd,
+          fadeOut: timing.fadeOut,
+        });
+      }
+      await generatePngCards(built, preset);
+      specs = built;
     }
-
-    await generatePngCards(specs, preset);
     extraInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
 
     // 0=bg, 1=audio, 2..N=png cards

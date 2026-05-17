@@ -23,7 +23,7 @@ export function RenderPanel({
   outputFormat,
   onOutputFormatChange,
 }: RenderPanelProps) {
-  const { jobId, status, submitting, error, startRender } = useRenderJob();
+  const { jobId, status, submitting, cancelling, error, startRender, cancelRender } = useRenderJob();
 
   const isRunning =
     status?.status === "queued" || status?.status === "running";
@@ -60,14 +60,26 @@ export function RenderPanel({
         </div>
       </div>
 
-      {/* Export 버튼 */}
-      <button
-        onClick={handleExport}
-        disabled={submitting || isRunning}
-        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
-      >
-        {submitting ? "요청 중..." : isRunning ? "렌더 중..." : "▶ Export"}
-      </button>
+      {/* Export / 중지 버튼 */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleExport}
+          disabled={submitting || isRunning || cancelling}
+          className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
+        >
+          {submitting ? "요청 중..." : isRunning ? "렌더 중..." : "▶ Export"}
+        </button>
+
+        {isRunning && (
+          <button
+            onClick={() => void cancelRender()}
+            disabled={cancelling}
+            className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-40"
+          >
+            {cancelling ? "취소 중..." : "■ 중지"}
+          </button>
+        )}
+      </div>
 
       {error && <p className="text-xs text-red-400">{error}</p>}
 

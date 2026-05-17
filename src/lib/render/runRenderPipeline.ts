@@ -7,11 +7,11 @@ import {
   uploadToStorage,
 } from "@/lib/supabase/storage";
 import { concatAndNormalize } from "@/lib/ffmpeg/concatAndNormalize";
-import { renderVideo } from "@/lib/ffmpeg/renderVideo";
+import { renderVideo, preparePngCardSpecs } from "@/lib/ffmpeg/renderVideo";
 import { extractThumbnail } from "@/lib/ffmpeg/thumbnail";
 import { generateTracklistText } from "@/lib/tracklist";
 import { getJobWorkDir, getJobAudioDir, getFinalOutputPath } from "@/lib/workspace";
-import { activeProcesses } from "./processRegistry";
+import { activeProcesses, cancelledJobs } from "./processRegistry";
 import { jobQueue } from "./jobQueue";
 import { cleanupIntermediateFiles } from "./cleanupIntermediateFiles";
 import type { ProjectSnapshot, Track, Background } from "@/lib/schema";
@@ -61,10 +61,12 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     const bgLocalName = basename(snapshot.background.storagePath);
     const bgLocalPath = join(workDir, bgLocalName);
 
-    // A: Download tracks (up to 3 concurrent) and background simultaneously
-    const [audioPaths] = await Promise.all([
+    // A: Download tracks + background + prepare PNG cards in parallel.
+    // PNG card generation only requires snapshot data (no downloaded files needed).
+    const [audioPaths, , pngCardSpecs] = await Promise.all([
       downloadTracksParallel(snapshot.tracks, audioDir),
       downloadToFile(snapshot.background.storagePath, bgLocalPath),
+      preparePngCardSpecs(snapshot, workDir),
     ]);
     updateJobQueue(jobId, exportId, "running", 0.05, null, null);
 
@@ -101,6 +103,7 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       workDir,
       startTimeMs,
       onProgress,
+      pngCardSpecs,
     });
 
     // C: Extract thumbnail and upload tracklist concurrently
@@ -145,6 +148,12 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     updateJobQueue(jobId, exportId, "done", 1, null, null, outputPath, completedAt);
     console.log(`[render] ${jobId} done`);
   } catch (err) {
+    // Cancel endpoint already wiped DB + storage — skip error updates
+    if (cancelledJobs.has(jobId)) {
+      console.log(`[render] ${jobId} cancelled by user`);
+      return;
+    }
+
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[render] ${jobId} error:`, msg);
 
@@ -164,6 +173,7 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     updateJobQueue(jobId, exportId ?? "", "error", 0, null, msg);
   } finally {
     activeProcesses.delete(jobId);
+    cancelledJobs.delete(jobId);
     await cleanupIntermediateFiles(jobId);
   }
 }
@@ -223,26 +233,41 @@ async function copyImportIfNeeded(
 
   if (!trackNeedsCopy && !bgNeedsCopy) return snapshot;
 
-  // Sequential to avoid N concurrent Supabase connections spiking memory + bandwidth
-  const updatedTracks: Track[] = [];
-  for (const track of snapshot.tracks) {
-    if (track.storagePath.startsWith(prefix)) {
-      updatedTracks.push(track);
-      continue;
+  const COPY_CONCURRENCY = 3;
+  const updatedTracks: Track[] = new Array(snapshot.tracks.length);
+  let nextIdx = 0;
+
+  async function copyWorker(): Promise<void> {
+    while (nextIdx < snapshot.tracks.length) {
+      const i = nextIdx++;
+      const track = snapshot.tracks[i];
+      if (track.storagePath.startsWith(prefix)) {
+        updatedTracks[i] = track;
+        continue;
+      }
+      const filename = basename(track.storagePath);
+      const newPath = `${prefix}${filename}`;
+      await copyInStorage(track.storagePath, newPath);
+      updatedTracks[i] = { ...track, storagePath: newPath };
     }
-    const filename = basename(track.storagePath);
-    const newPath = `${prefix}${filename}`;
-    await copyInStorage(track.storagePath, newPath);
-    updatedTracks.push({ ...track, storagePath: newPath });
   }
 
   let updatedBg: Background | null = snapshot.background;
-  if (updatedBg && !updatedBg.storagePath.startsWith(prefix)) {
-    const filename = basename(updatedBg.storagePath);
-    const newPath = `${prefix}${filename}`;
-    await copyInStorage(updatedBg.storagePath, newPath);
-    updatedBg = { ...updatedBg, storagePath: newPath };
-  }
+  const bgJob =
+    updatedBg && !updatedBg.storagePath.startsWith(prefix)
+      ? (async () => {
+          const bg = updatedBg!;
+          const filename = basename(bg.storagePath);
+          const newPath = `${prefix}${filename}`;
+          await copyInStorage(bg.storagePath, newPath);
+          updatedBg = { ...bg, storagePath: newPath };
+        })()
+      : Promise.resolve();
+
+  await Promise.all([
+    ...Array.from({ length: Math.min(COPY_CONCURRENCY, snapshot.tracks.length || 1) }, copyWorker),
+    bgJob,
+  ]);
 
   return { ...snapshot, tracks: updatedTracks, background: updatedBg };
 }

@@ -1,6 +1,5 @@
 import type { Track, OverlayPreset } from "@/lib/schema";
 import { compileDrawtextFilters } from "./overlayDrawtextRenderer";
-import { compilePngCardFilters } from "./overlayPngRenderer";
 
 export type OverlayTiming =
   | { skip: true }
@@ -55,8 +54,9 @@ export function compileOverlayFilters(
       const filters = compileDrawtextFilters(track, timing, preset);
       allFilters.push(...filters);
     } else if (preset.renderer === "png_card") {
-      const filters = compilePngCardFilters(track, timing, preset);
-      allFilters.push(...filters);
+      // png_card overlays must go through generatePngCards path in renderVideo —
+      // compileOverlayFilters should never be reached for this renderer + non-0 mode.
+      throw new Error("compileOverlayFilters: png_card renderer is not supported here");
     } else {
       throw new Error(`unknown renderer: ${(preset as { renderer: string }).renderer}`);
     }

@@ -44,3 +44,4 @@ next-env.d.ts
 # workspace (render temp files)
 /workspace/tmp/
 !/workspace/.gitkeep
+.gstack/
