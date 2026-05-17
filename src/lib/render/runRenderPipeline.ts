@@ -45,19 +45,24 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     // The default preset is already in the registry; skip the DB lookup for it.
     const overlayConfig = snapshot.renderConfig.overlay;
     if (overlayConfig.presetId !== "default") {
-      const { data: presetRow } = await supabase
+      const { data: presetRow, error: presetErr } = await supabase
         .from("overlay_presets")
         .select("*")
         .eq("id", overlayConfig.presetId)
         .single();
-      const rowParsed = PresetRowSchema.safeParse(presetRow);
-      if (rowParsed.success) {
-        const preset = rowToPreset(rowParsed.data);
-        if (preset) {
-          // Register under the version the snapshot expects so resolveOverlayPreset succeeds.
-          registerPreset({ ...preset, version: overlayConfig.presetVersion });
-        }
+      if (presetErr || !presetRow) {
+        throw new Error(`overlay preset not found in DB: ${overlayConfig.presetId} (${presetErr?.message ?? "no row"})`);
       }
+      const rowParsed = PresetRowSchema.safeParse(presetRow);
+      if (!rowParsed.success) {
+        throw new Error(`overlay preset schema invalid: ${rowParsed.error.issues[0]?.message}`);
+      }
+      const preset = rowToPreset(rowParsed.data);
+      if (!preset) {
+        throw new Error(`overlay preset mapping failed: ${overlayConfig.presetId}`);
+      }
+      // Register under the version the snapshot expects so resolveOverlayPreset succeeds.
+      registerPreset({ ...preset, version: overlayConfig.presetVersion });
     }
 
     const now = new Date().toISOString();

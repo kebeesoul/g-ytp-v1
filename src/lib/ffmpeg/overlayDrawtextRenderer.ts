@@ -10,7 +10,8 @@ function escapeDrawtext(text: string): string {
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'")
     .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
+    .replace(/%/g, "\\%")
+    .replace(/,/g, "\\,");  // filter_complex_script ignores single-quote protection for commas
 }
 
 // fade-in / fade-out alpha 표현식 생성

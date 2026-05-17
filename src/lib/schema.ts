@@ -74,8 +74,8 @@ export const OverlayPresetSchema = z.object({
   }),
 
   animation: z.object({
-    fadeInSec: z.number().default(0.3),
-    fadeOutSec: z.number().default(0.5),
+    fadeInSec: z.number().min(0).max(3).default(0.3),
+    fadeOutSec: z.number().min(0).max(3).default(0.5),
     animMemo: z.string().optional(),
   }),
 });

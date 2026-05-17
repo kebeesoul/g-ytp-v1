@@ -19,7 +19,8 @@ function escapeDrawtext(text: string): string {
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'")
     .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
+    .replace(/%/g, "\\%")
+    .replace(/,/g, "\\,");  // filter_complex_script ignores single-quote protection for commas
 }
 
 // Generate a transparent 1920×1080 PNG for each spec using FFmpeg (up to CARD_GEN_CONCURRENCY at once).
