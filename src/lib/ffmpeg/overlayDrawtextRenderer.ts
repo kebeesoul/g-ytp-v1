@@ -15,8 +15,10 @@ function escapeDrawtext(text: string): string {
 }
 
 // fade-in / fade-out alpha 표현식 생성
-// filter_complex_script 파서가 single-quote 안 쉼표도 필터 구분자로 오인하므로
-// if(lt(t,X),Y,Z) 대신 조건 곱셈((t>=X)*(t<Y)*value)으로 쉼표를 완전히 제거한다.
+// filter_complex_script 파서는 single-quote 안 쉼표도 필터 구분자로 오인한다.
+// 해결책: gt(t\,X)/lt(t\,X) 함수 호출 + \, 이스케이프(필터 그래프 레벨).
+// 파서가 \,를 리터럴 쉼표로 변환 → eval이 gt(t,X)를 올바르게 해석.
+// > / < 연산자는 이 버전의 FFmpeg eval에서 파싱 오류를 일으킨다.
 function buildAlphaExpr(
   tStart: number,
   tEnd: number,
@@ -32,17 +34,17 @@ function buildAlphaExpr(
   const foStart = (tEnd - fadeOut).toFixed(3);
 
   if (hasFadeOut) {
-    // fade-in segment + hold segment + fade-out segment — no commas, no >= (unsupported in eval)
+    // fade-in + hold + fade-out: gt/lt with \, escape — no raw > < operators
     return (
-      `(t>${s})*(t<${fiEnd})*(t-${s})/${fi}` +
-      `+(t>${fiEnd})*(t<${foStart})` +
-      `+(t>${foStart})*(t<${e})*(${e}-t)/${fo}`
+      `gt(t\\,${s})*lt(t\\,${fiEnd})*(t-${s})/${fi}` +
+      `+gt(t\\,${fiEnd})*lt(t\\,${foStart})` +
+      `+gt(t\\,${foStart})*lt(t\\,${e})*(${e}-t)/${fo}`
     );
   }
-  // fade-in then hold at 1 — no commas, no >=
+  // fade-in then hold at 1
   return (
-    `(t>${s})*(t<${fiEnd})*(t-${s})/${fi}` +
-    `+(t>${fiEnd})`
+    `gt(t\\,${s})*lt(t\\,${fiEnd})*(t-${s})/${fi}` +
+    `+gt(t\\,${fiEnd})`
   );
 }
 
@@ -63,9 +65,6 @@ export function compileDrawtextFilters(
     fadeOut
   );
 
-  // Use > and < (not >= / <=) — this FFmpeg eval does not parse >= as a single operator.
-  const enable = `(t>${tStart.toFixed(3)})*(t<${tEnd.toFixed(3)})`;
-
   // y 계산: layout.y < 0 → 하단 기준 (h + layout.y)
   const yBase = layout.y < 0 ? `h${layout.y}` : `${layout.y}`;
   const titleY = yBase;
@@ -78,6 +77,9 @@ export function compileDrawtextFilters(
   const artistText = escapeDrawtext(track.artist);
   const titleText = escapeDrawtext(track.title);
 
+  // alpha= is unquoted so \, in the expression is parsed by the filter graph layer
+  // (converted to literal comma before passing to the expression evaluator).
+  // enable= is omitted — alpha=0 already makes text invisible outside the window.
   const artistFilter =
     `drawtext=fontfile='${fontfile}'` +
     `:text='${artistText}'` +
@@ -85,8 +87,7 @@ export function compileDrawtextFilters(
     `:y=${artistY}` +
     `:fontsize=${typography.artistFontSize}` +
     `:fontcolor=${color.artist}` +
-    `:alpha='${alpha}'` +
-    `:enable='${enable}'`;
+    `:alpha=${alpha}`;
 
   const titleFilter =
     `drawtext=fontfile='${fontfile}'` +
@@ -95,8 +96,7 @@ export function compileDrawtextFilters(
     `:y=${titleY}` +
     `:fontsize=${typography.titleFontSize}` +
     `:fontcolor=${color.title}` +
-    `:alpha='${alpha}'` +
-    `:enable='${enable}'`;
+    `:alpha=${alpha}`;
 
   return [artistFilter, titleFilter];
 }
