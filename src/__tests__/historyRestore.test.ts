@@ -52,7 +52,9 @@ const BASE_SNAPSHOT: ProjectSnapshot = {
     fit: "cover",
     dim: 0.25,
     blur: 0,
+    cropX: 0.5,
     cropY: 0.5,
+    cropW: 1.0,
   },
   renderConfig: {
     transition: { type: "crossfade", crossfadeSec: 2 },

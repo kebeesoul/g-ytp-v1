@@ -188,25 +188,34 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   const fit = bg?.fit ?? "cover";
   const dim = bg?.dim ?? 0.25;
   const blur = bg?.blur ?? 0;
+  const cropX = bg?.cropX ?? 0.5;
   const cropY = bg?.cropY ?? 0.5;
-  // Center horizontally, position vertically by cropY (0=top, 0.5=center, 1=bottom).
-  // For landscape inputs in_h==1080, so y==0 regardless of cropY.
-  const cropExpr = `crop=1920:1080:(in_w-1920)/2:(in_h-1080)*${cropY.toFixed(3)}`;
+  const cropW = bg?.cropW ?? 1.0;
+
+  // Crop a cropW-fraction of the original image (16:9 box) centered at (cropX, cropY),
+  // then scale up to 1920×1080. Coefficients are pre-computed so no commas appear inside
+  // FFmpeg expressions (which would conflict with filter option separators).
+  const wCoef = cropW.toFixed(6);
+  const hCoef = (cropW * 9 / 16).toFixed(6);
+  const xCoef = (cropX - cropW / 2).toFixed(6);   // left edge as fraction of in_w
+  const yInH  = cropY.toFixed(6);                  // center-y as fraction of in_h
+  const yInW  = (cropW * 9 / 32).toFixed(6);       // half box-height as fraction of in_w
+  const cropExpr =
+    `crop=in_w*${wCoef}:in_w*${hCoef}:in_w*${xCoef}:in_h*${yInH}-in_w*${yInW},` +
+    `scale=1920:1080:flags=lanczos`;
 
   if (fit === "blurred_contain") {
     const blurVal = blur > 0 ? blur : 20;
     return (
       `[0:v]split[_bg1][_bg2];\n` +
-      `[_bg1]scale=1920:1080:force_original_aspect_ratio=increase,` +
-      `${cropExpr},boxblur=${blurVal}:1[_blurred];\n` +
+      `[_bg1]${cropExpr},boxblur=${blurVal}:1[_blurred];\n` +
       `[_bg2]scale=1920:1080:force_original_aspect_ratio=decrease[_fg];\n` +
       `[_blurred][_fg]overlay=(W-w)/2:(H-h)/2,eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
     );
   }
 
   return (
-    `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,` +
-    `${cropExpr},eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
+    `[0:v]${cropExpr},eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
   );
 }
 

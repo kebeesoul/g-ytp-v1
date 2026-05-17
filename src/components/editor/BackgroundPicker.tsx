@@ -25,9 +25,7 @@ export function BackgroundPicker({
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [showCropEditor, setShowCropEditor] = useState(false);
 
-  // Portrait when the image is taller than 16:9 ratio
-  const isPortrait =
-    imgNaturalSize !== null && imgNaturalSize.h / imgNaturalSize.w > 9 / 16;
+  const hasImage = value?.kind === "image" && imgNaturalSize !== null;
 
   // 미리보기 Canvas 렌더링
   useEffect(() => {
@@ -41,14 +39,16 @@ export function BackgroundPicker({
     if (!ctx) return;
 
     const publicUrl = getPublicUrl(value.storagePath);
+    const cropX = value.cropX ?? 0.5;
     const cropY = value.cropY ?? 0.5;
+    const cropW = value.cropW ?? 1.0;
 
     if (value.kind === "image") {
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
         setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-        drawCoverImage(ctx, img, canvas.width, canvas.height, DIM_DEFAULT, cropY);
+        drawCoverImage(ctx, img, canvas.width, canvas.height, DIM_DEFAULT, cropX, cropY, cropW);
       };
       img.src = publicUrl;
     } else {
@@ -150,12 +150,12 @@ export function BackgroundPicker({
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>{value.kind === "image" ? "이미지" : "영상"}</span>
           <div className="flex items-center gap-3">
-            {isPortrait && value.kind === "image" && (
+            {hasImage && (
               <button
                 onClick={() => setShowCropEditor(true)}
                 className="text-blue-400 hover:text-blue-300"
               >
-                ✂ 크롭 위치
+                ✂ 크롭
               </button>
             )}
             <button
@@ -172,9 +172,11 @@ export function BackgroundPicker({
         <CropEditor
           imageUrl={getPublicUrl(value.storagePath)}
           naturalSize={imgNaturalSize}
+          initialCropX={value.cropX ?? 0.5}
           initialCropY={value.cropY ?? 0.5}
-          onConfirm={(cropY) => {
-            onChange({ ...value, cropY });
+          initialCropW={value.cropW ?? 1.0}
+          onConfirm={(cropX, cropY, cropW) => {
+            onChange({ ...value, cropX, cropY, cropW });
             setShowCropEditor(false);
           }}
           onClose={() => setShowCropEditor(false)}
@@ -192,18 +194,21 @@ function drawCoverImage(
   cw: number,
   ch: number,
   dim: number,
-  cropY: number = 0.5
+  cropX: number = 0.5,
+  cropY: number = 0.5,
+  cropW: number = 1.0
 ) {
-  const scale = Math.max(cw / source.naturalWidth, ch / source.naturalHeight);
-  const sw = source.naturalWidth * scale;
-  const sh = source.naturalHeight * scale;
-  const sx = (cw - sw) / 2;
-  // cropY: 0=top, 0.5=center, 1=bottom
-  const sy = -(sh - ch) * cropY;
+  const iw = source.naturalWidth;
+  const ih = source.naturalHeight;
+
+  // Crop box in source pixels (center-anchored, 16:9)
+  const boxW = iw * cropW;
+  const boxH = boxW * (9 / 16);
+  const sx = Math.max(0, Math.min(iw * cropX - boxW / 2, iw - boxW));
+  const sy = Math.max(0, Math.min(ih * cropY - boxH / 2, ih - boxH));
 
   ctx.clearRect(0, 0, cw, ch);
-  ctx.drawImage(source, sx, sy, sw, sh);
-
+  ctx.drawImage(source, sx, sy, boxW, boxH, 0, 0, cw, ch);
   ctx.fillStyle = `rgba(0,0,0,${dim})`;
   ctx.fillRect(0, 0, cw, ch);
 }
@@ -233,39 +238,115 @@ function drawCoverVideo(
 interface CropEditorProps {
   imageUrl: string;
   naturalSize: { w: number; h: number };
+  initialCropX: number;
   initialCropY: number;
-  onConfirm: (cropY: number) => void;
+  initialCropW: number;
+  onConfirm: (cropX: number, cropY: number, cropW: number) => void;
   onClose: () => void;
 }
+
+// Drag mode: "move" = pan, "resize-left/right/top/bottom/tl/tr/bl/br" = edge/corner resize
+type DragMode =
+  | "move"
+  | "resize-l" | "resize-r"
+  | "resize-t" | "resize-b"
+  | "resize-tl" | "resize-tr" | "resize-bl" | "resize-br";
 
 function CropEditor({
   imageUrl,
   naturalSize,
+  initialCropX,
   initialCropY,
+  initialCropW,
   onConfirm,
   onClose,
 }: CropEditorProps) {
+  // cropX/Y are CENTER fractions (0–1), cropW is width fraction (0–1)
+  const [cropX, setCropX] = useState(initialCropX);
   const [cropY, setCropY] = useState(initialCropY);
+  const [cropW, setCropW] = useState(initialCropW);
+
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
+  const dragMode = useRef<DragMode | null>(null);
+  const dragStart = useRef({ x: 0, y: 0, cropX: 0, cropY: 0, cropW: 0 });
 
-  // Scale image to fit in a 320×420 bounding box while preserving aspect ratio
-  const MAX_H = 420;
-  const FULL_W = 320;
-  const rawH = FULL_W * (naturalSize.h / naturalSize.w);
-  const displayH = Math.min(MAX_H, rawH);
-  const displayW = rawH > MAX_H ? Math.round(MAX_H * (naturalSize.w / naturalSize.h)) : FULL_W;
-  const cropH = Math.round(displayW * (9 / 16));
-  const maxTop = Math.max(0, displayH - cropH);
-  const cropWindowTop = Math.round(maxTop * cropY);
+  // Display size: fit natural image in 480×480 bounding box
+  const MAX = 480;
+  const scaleToFit = Math.min(MAX / naturalSize.w, MAX / naturalSize.h);
+  const displayW = Math.round(naturalSize.w * scaleToFit);
+  const displayH = Math.round(naturalSize.h * scaleToFit);
 
-  function updateCropY(clientY: number) {
+  // Minimum cropW: crop box height can't exceed image height (16:9 ratio)
+  // boxH = cropW * naturalSize.w * 9/16 ≤ naturalSize.h  →  cropW ≤ 16*h/(9*w)
+  const minCropW = 0.05;
+  const maxCropW = Math.min(1.0, (naturalSize.h * 16) / (naturalSize.w * 9));
+
+  // Crop box in display pixels
+  const boxW = cropW * displayW;
+  const boxH = boxW * (9 / 16);
+  const boxLeft = cropX * displayW - boxW / 2;
+  const boxTop  = cropY * displayH - boxH / 2;
+
+  // Clamp so box never leaves the image
+  function clampCrop(cx: number, cy: number, cw: number) {
+    const w = Math.max(minCropW, Math.min(maxCropW, cw));
+    const bH = w * (naturalSize.w / naturalSize.h) * (9 / 16);
+    const x = Math.max(w / 2, Math.min(1 - w / 2, cx));
+    const y = Math.max(bH / 2, Math.min(1 - bH / 2, cy));
+    return { x, y, w };
+  }
+
+  function onPointerDown(e: React.PointerEvent, mode: DragMode) {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragMode.current = mode;
+    dragStart.current = { x: e.clientX, y: e.clientY, cropX, cropY, cropW };
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    const mode = dragMode.current;
+    if (!mode) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const relY = clientY - rect.top - cropH / 2;
-    const clamped = Math.max(0, Math.min(maxTop, relY));
-    setCropY(maxTop > 0 ? clamped / maxTop : 0.5);
+
+    const dx = (e.clientX - dragStart.current.x) / displayW; // in image fractions
+    const dy = (e.clientY - dragStart.current.y) / displayH;
+    const { cropX: sx, cropY: sy, cropW: sw } = dragStart.current;
+    const aspect = (naturalSize.w / naturalSize.h) * (9 / 16); // boxH/boxW in image space
+
+    let nx = sx, ny = sy, nw = sw;
+
+    if (mode === "move") {
+      nx = sx + dx;
+      ny = sy + dy;
+    } else {
+      // For resize: adjust width and re-center accordingly
+      if (mode === "resize-r" || mode === "resize-tr" || mode === "resize-br") {
+        nw = sw + dx * 2; // symmetric resize from center
+      }
+      if (mode === "resize-l" || mode === "resize-tl" || mode === "resize-bl") {
+        nw = sw - dx * 2;
+      }
+      if (mode === "resize-b" || mode === "resize-bl" || mode === "resize-br") {
+        // vertical drag → convert to equivalent width change
+        nw = sw + (dy / aspect) * 2;
+      }
+      if (mode === "resize-t" || mode === "resize-tl" || mode === "resize-tr") {
+        nw = sw - (dy / aspect) * 2;
+      }
+    }
+
+    const clamped = clampCrop(nx, ny, nw);
+    setCropX(clamped.x);
+    setCropY(clamped.y);
+    setCropW(clamped.w);
   }
+
+  function onPointerUp() {
+    dragMode.current = null;
+  }
+
+  const HANDLE = 10; // handle size in px
 
   return (
     <div
@@ -276,28 +357,16 @@ function CropEditor({
         className="flex flex-col gap-3 rounded-lg bg-gray-900 p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="text-sm font-medium text-gray-200">크롭 위치 조정</span>
-        <p className="text-xs text-gray-400">
-          클릭 또는 드래그로 16:9 크롭 영역을 설정하세요.
-        </p>
+        <span className="text-sm font-medium text-gray-200">크롭 편집</span>
+        <p className="text-xs text-gray-400">박스를 드래그해 위치 이동, 모서리/가장자리를 드래그해 크기 조절</p>
 
-        {/* Image with crop overlay */}
+        {/* Image canvas */}
         <div
           ref={containerRef}
-          className="relative cursor-ns-resize select-none overflow-hidden rounded"
-          style={{ width: displayW, height: displayH }}
-          onPointerDown={(e) => {
-            dragging.current = true;
-            e.currentTarget.setPointerCapture(e.pointerId);
-            updateCropY(e.clientY);
-          }}
-          onPointerMove={(e) => {
-            if (!dragging.current) return;
-            updateCropY(e.clientY);
-          }}
-          onPointerUp={() => {
-            dragging.current = false;
-          }}
+          className="relative select-none overflow-hidden rounded"
+          style={{ width: displayW, height: displayH, cursor: "crosshair" }}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -306,53 +375,107 @@ function CropEditor({
             draggable={false}
             style={{ width: displayW, height: displayH, display: "block" }}
           />
-          {/* Top dim */}
-          {cropWindowTop > 0 && (
-            <div
-              className="pointer-events-none absolute left-0 top-0 w-full bg-black/60"
-              style={{ height: cropWindowTop }}
-            />
+
+          {/* Dimmed overlay outside crop box (4 rects) */}
+          {/* Top */}
+          {boxTop > 0 && (
+            <div className="pointer-events-none absolute left-0 top-0 w-full bg-black/60"
+              style={{ height: boxTop }} />
           )}
-          {/* Bottom dim */}
-          {cropWindowTop + cropH < displayH && (
-            <div
-              className="pointer-events-none absolute left-0 w-full bg-black/60"
-              style={{ top: cropWindowTop + cropH, height: displayH - cropWindowTop - cropH }}
-            />
+          {/* Bottom */}
+          {boxTop + boxH < displayH && (
+            <div className="pointer-events-none absolute left-0 w-full bg-black/60"
+              style={{ top: boxTop + boxH, height: displayH - boxTop - boxH }} />
           )}
-          {/* 16:9 crop frame */}
+          {/* Left */}
+          <div className="pointer-events-none absolute bg-black/60"
+            style={{ top: boxTop, left: 0, width: Math.max(0, boxLeft), height: boxH }} />
+          {/* Right */}
+          <div className="pointer-events-none absolute bg-black/60"
+            style={{ top: boxTop, left: boxLeft + boxW, right: 0, height: boxH }} />
+
+          {/* Crop box frame + drag handle */}
           <div
-            className="pointer-events-none absolute left-0 right-0 box-border border-2 border-yellow-400"
-            style={{ top: cropWindowTop, height: cropH }}
-          />
+            className="absolute box-border border-2 border-yellow-400 cursor-move"
+            style={{ left: boxLeft, top: boxTop, width: boxW, height: boxH }}
+            onPointerDown={(e) => onPointerDown(e, "move")}
+          >
+            {/* Edge handles */}
+            {(["l","r","t","b"] as const).map((side) => {
+              const style: React.CSSProperties = {
+                position: "absolute",
+                background: "#facc15",
+                borderRadius: 2,
+              };
+              if (side === "l") Object.assign(style, { left: -HANDLE/2, top: "50%", transform: "translateY(-50%)", width: HANDLE, height: HANDLE*2, cursor: "ew-resize" });
+              if (side === "r") Object.assign(style, { right: -HANDLE/2, top: "50%", transform: "translateY(-50%)", width: HANDLE, height: HANDLE*2, cursor: "ew-resize" });
+              if (side === "t") Object.assign(style, { top: -HANDLE/2, left: "50%", transform: "translateX(-50%)", height: HANDLE, width: HANDLE*2, cursor: "ns-resize" });
+              if (side === "b") Object.assign(style, { bottom: -HANDLE/2, left: "50%", transform: "translateX(-50%)", height: HANDLE, width: HANDLE*2, cursor: "ns-resize" });
+              return (
+                <div
+                  key={side}
+                  style={style}
+                  onPointerDown={(e) => onPointerDown(e, `resize-${side}` as DragMode)}
+                />
+              );
+            })}
+
+            {/* Corner handles */}
+            {(["tl","tr","bl","br"] as const).map((corner) => {
+              const style: React.CSSProperties = {
+                position: "absolute",
+                background: "#facc15",
+                width: HANDLE,
+                height: HANDLE,
+                borderRadius: 2,
+              };
+              if (corner === "tl") Object.assign(style, { top: -HANDLE/2, left: -HANDLE/2, cursor: "nwse-resize" });
+              if (corner === "tr") Object.assign(style, { top: -HANDLE/2, right: -HANDLE/2, cursor: "nesw-resize" });
+              if (corner === "bl") Object.assign(style, { bottom: -HANDLE/2, left: -HANDLE/2, cursor: "nesw-resize" });
+              if (corner === "br") Object.assign(style, { bottom: -HANDLE/2, right: -HANDLE/2, cursor: "nwse-resize" });
+              return (
+                <div
+                  key={corner}
+                  style={style}
+                  onPointerDown={(e) => onPointerDown(e, `resize-${corner}` as DragMode)}
+                />
+              );
+            })}
+          </div>
         </div>
 
-        {/* Fine-tune slider */}
-        <div className="flex items-center gap-3">
-          <span className="w-16 shrink-0 text-xs text-gray-400">
-            위치 {Math.round(cropY * 100)}%
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round(cropY * 100)}
-            onChange={(e) => setCropY(Number(e.target.value) / 100)}
-            className="flex-1"
-          />
+        {/* Sliders */}
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+          <span className="text-xs text-gray-400">가로</span>
+          <input type="range" min={0} max={100} value={Math.round(cropX * 100)}
+            onChange={(e) => {
+              const { x, y, w } = clampCrop(Number(e.target.value) / 100, cropY, cropW);
+              setCropX(x); setCropY(y); setCropW(w);
+            }} className="flex-1" />
+          <span className="text-xs text-gray-400">세로</span>
+          <input type="range" min={0} max={100} value={Math.round(cropY * 100)}
+            onChange={(e) => {
+              const { x, y, w } = clampCrop(cropX, Number(e.target.value) / 100, cropW);
+              setCropX(x); setCropY(y); setCropW(w);
+            }} className="flex-1" />
+          <span className="text-xs text-gray-400">크기</span>
+          <input type="range"
+            min={Math.round(minCropW * 100)}
+            max={Math.round(maxCropW * 100)}
+            value={Math.round(cropW * 100)}
+            onChange={(e) => {
+              const { x, y, w } = clampCrop(cropX, cropY, Number(e.target.value) / 100);
+              setCropX(x); setCropY(y); setCropW(w);
+            }} className="flex-1" />
         </div>
 
         <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200"
-          >
+          <button onClick={onClose}
+            className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200">
             취소
           </button>
-          <button
-            onClick={() => onConfirm(cropY)}
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500"
-          >
+          <button onClick={() => onConfirm(cropX, cropY, cropW)}
+            className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500">
             확인
           </button>
         </div>

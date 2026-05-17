@@ -6,7 +6,9 @@ export const BG_DEFAULTS = {
   fit: "cover" as const,
   dim: 0.25,
   blur: 0,
+  cropX: 0.5,
   cropY: 0.5,
+  cropW: 1.0,
 };
 
 export function applyBgDefaults(
