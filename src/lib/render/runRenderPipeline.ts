@@ -14,6 +14,8 @@ import { getJobWorkDir, getJobAudioDir, getFinalOutputPath } from "@/lib/workspa
 import { activeProcesses, cancelledJobs } from "./processRegistry";
 import { jobQueue } from "./jobQueue";
 import { cleanupIntermediateFiles } from "./cleanupIntermediateFiles";
+import { PresetRowSchema, rowToPreset } from "@/lib/presets";
+import { registerPreset } from "@/lib/design/presetRegistry";
 import type { ProjectSnapshot, Track, Background } from "@/lib/schema";
 
 export async function runRenderPipeline(jobId: string): Promise<void> {
@@ -38,6 +40,25 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     if (!project) throw new Error(`projects: ${exportId} not found`);
 
     let snapshot = project.snapshot as ProjectSnapshot;
+
+    // Load user-saved overlay preset from DB into the in-memory registry before rendering.
+    // The default preset is already in the registry; skip the DB lookup for it.
+    const overlayConfig = snapshot.renderConfig.overlay;
+    if (overlayConfig.presetId !== "default") {
+      const { data: presetRow } = await supabase
+        .from("overlay_presets")
+        .select("*")
+        .eq("id", overlayConfig.presetId)
+        .single();
+      const rowParsed = PresetRowSchema.safeParse(presetRow);
+      if (rowParsed.success) {
+        const preset = rowToPreset(rowParsed.data);
+        if (preset) {
+          // Register under the version the snapshot expects so resolveOverlayPreset succeeds.
+          registerPreset({ ...preset, version: overlayConfig.presetVersion });
+        }
+      }
+    }
 
     const now = new Date().toISOString();
     await supabase

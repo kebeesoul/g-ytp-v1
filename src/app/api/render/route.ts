@@ -36,7 +36,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const jobId = crypto.randomUUID();
 
-  const { error: projErr } = await supabaseServer.from("projects").insert({
+  const { error: projErr } = await supabaseServer.from("projects").upsert({
     id: exportId,
     title: snapshot.title,
     snapshot,
@@ -44,7 +44,7 @@ export async function POST(req: Request): Promise<Response> {
     export_folder: `export/${exportId}/`,
     latest_job_id: null,
     exported_at: null,
-  });
+  }, { onConflict: "id" });
   if (projErr) {
     return Response.json(
       { error: `projects insert failed: ${projErr.message}` },
