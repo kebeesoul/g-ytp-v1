@@ -3,7 +3,7 @@ import type { OverlayPreset } from "@/lib/schema";
 const DEFAULT_V1: OverlayPreset = {
   id: "default",
   version: 1,
-  renderer: "drawtext",
+  renderer: "png_card",
   layout: {
     anchor: "bottom-left",
     x: 80,
