@@ -44,6 +44,12 @@ export default function RootLayout({
             >
               History
             </Link>
+            <Link
+              href="/settings"
+              className="text-sm text-gray-300 hover:text-white transition-colors"
+            >
+              Settings
+            </Link>
           </nav>
         </header>
         <main className="flex flex-col flex-1">{children}</main>

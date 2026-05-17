@@ -3,10 +3,12 @@
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
+  OverlayPresetSchema,
   ProjectRecordSchema,
   ProjectSnapshotSchema,
   TrackSchema,
   type Background,
+  type OverlayPreset,
   type ProjectSnapshot,
   type Track,
   type TransitionConfig,
@@ -15,6 +17,7 @@ import { TitleInput } from "@/components/editor/TitleInput";
 import { TrackList } from "@/components/editor/TrackList";
 import { AudioPlayer } from "@/components/editor/AudioPlayer";
 import { BackgroundPicker } from "@/components/editor/BackgroundPicker";
+import { OverlayPresetSlots } from "@/components/editor/OverlayPresetSlots";
 import { RenderPanel } from "@/components/editor/RenderPanel";
 import { TracklistExport } from "@/components/editor/TracklistExport";
 
@@ -67,6 +70,9 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [hashtagInput, setHashtagInput] = useState("");
   const [outputFormat, setOutputFormat] = useState<"mp4" | "mov">("mp4");
 
+  const [overlayPresetId, setOverlayPresetId] = useState("default");
+  const [presets, setPresets] = useState<(OverlayPreset | null)[]>(Array(6).fill(null));
+
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
   const [activeStoragePath, setActiveStoragePath] = useState<string | null>(null);
 
@@ -75,6 +81,26 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [ffmpegWarning, setFfmpegWarning] = useState<string | null>(null);
 
   const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    fetch("/api/overlay-presets")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data: unknown) => {
+        const result = z.array(OverlayPresetSchema).safeParse(data);
+        if (!result.success) return;
+        const slots: (OverlayPreset | null)[] = Array(6).fill(null);
+        for (const preset of result.data) {
+          const match = /^slot-(\d)$/.exec(preset.id);
+          if (match) slots[parseInt(match[1], 10) - 1] = preset;
+        }
+        setPresets(slots);
+        setOverlayPresetId((prev) => {
+          if (prev !== "default") return prev;
+          return result.data[0]?.id ?? prev;
+        });
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -119,6 +145,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
         setBackground(snapshot.background);
         setTransitionType(snapshot.renderConfig.transition.type);
         setOverlayMode(snapshot.renderConfig.overlay.displayMode);
+        setOverlayPresetId(snapshot.renderConfig.overlay.presetId);
         setHashtags(snapshot.hashtags);
         setHashtagInput(snapshot.hashtags.join(", "));
         setOutputFormat(snapshot.renderConfig.outputFormat);
@@ -142,7 +169,12 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
       renderConfig: {
         ...DEFAULT_RENDER_CONFIG,
         transition,
-        overlay: { ...DEFAULT_RENDER_CONFIG.overlay, displayMode: overlayMode },
+        overlay: {
+          ...DEFAULT_RENDER_CONFIG.overlay,
+          displayMode: overlayMode,
+          presetId: overlayPresetId,
+          presetVersion: presets.find((p) => p?.id === overlayPresetId)?.version ?? 1,
+        },
         outputFormat,
       },
       hashtags,
@@ -206,7 +238,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const snapshot = useMemo(
     () => buildSnapshot(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [title, tracks, background, transitionType, crossfadeSec, overlayMode, outputFormat, hashtags]
+    [title, tracks, background, transitionType, crossfadeSec, overlayMode, overlayPresetId, presets, outputFormat, hashtags]
   );
   const snapshotValid = !("error" in snapshot);
 
@@ -254,6 +286,12 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             editorSessionId={editorSessionId}
             value={background}
             onChange={setBackground}
+          />
+
+          <OverlayPresetSlots
+            presets={presets}
+            selectedId={overlayPresetId}
+            onChange={setOverlayPresetId}
           />
 
           <div className="flex flex-col gap-3 rounded-md border border-gray-700 bg-gray-900 p-4">
