@@ -30,7 +30,10 @@ export async function POST(_req: Request, { params }: RouteParams): Promise<Resp
     return Response.json({ error: "job is not active" }, { status: 409 });
   }
 
-  const projectId = job.project_id as string;
+  if (!job.project_id) {
+    return Response.json({ error: "project_id missing" }, { status: 500 });
+  }
+  const projectId = job.project_id;
 
   // Signal runRenderPipeline catch block to skip DB error updates
   cancelledJobs.add(jobId);
@@ -44,16 +47,24 @@ export async function POST(_req: Request, { params }: RouteParams): Promise<Resp
     }, 2000);
   }
 
-  // DB cleanup: delink job, then delete both records
-  await supabaseServer
+  // DB cleanup: delink job first to release FK, then delete both records
+  const { error: delinkError } = await supabaseServer
     .from("projects")
     .update({ latest_job_id: null })
     .eq("id", projectId);
 
-  await supabaseServer
+  if (delinkError) {
+    return Response.json({ error: delinkError.message }, { status: 500 });
+  }
+
+  const { error: jobDeleteError } = await supabaseServer
     .from("render_jobs")
     .delete()
     .eq("id", jobId);
+
+  if (jobDeleteError) {
+    return Response.json({ error: jobDeleteError.message }, { status: 500 });
+  }
 
   await supabaseServer
     .from("projects")

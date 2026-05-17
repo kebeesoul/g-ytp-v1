@@ -12,7 +12,10 @@ export async function GET(): Promise<Response> {
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  const rows = z.array(PresetRowSchema).parse(data);
-  const presets = rows.map(rowToPreset);
+  const result = z.array(PresetRowSchema).safeParse(data);
+  if (!result.success) {
+    return Response.json({ error: "preset schema mismatch" }, { status: 500 });
+  }
+  const presets = result.data.map(rowToPreset);
   return Response.json(presets);
 }

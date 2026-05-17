@@ -83,7 +83,11 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
           <input
             type="text"
             value={name}
-            onChange={(e) => { setName(e.target.value); setSaved(false); }}
+            onChange={(e) => {
+              setName(e.target.value);
+              set("animation", "animMemo", e.target.value);
+              setSaved(false);
+            }}
             placeholder="ex) 로파이 화이트"
             className={inputCls}
           />
