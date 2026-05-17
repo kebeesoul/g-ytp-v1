@@ -12,7 +12,9 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function loadPresets() {
+    setLoading(true);
+    setFetchError(null);
     fetch("/api/overlay-presets")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`서버 오류 (${r.status})`))))
       .then((data: unknown) => {
@@ -32,6 +34,11 @@ export default function SettingsPage() {
         setFetchError(err instanceof Error ? err.message : "프리셋 로드 실패");
       })
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    loadPresets();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleSaved(preset: OverlayPreset) {
@@ -52,7 +59,15 @@ export default function SettingsPage() {
         {loading ? (
           <p className="text-sm text-gray-400">불러오는 중...</p>
         ) : fetchError ? (
-          <p className="text-sm text-red-400">오류: {fetchError}</p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-red-400">오류: {fetchError}</p>
+            <button
+              onClick={loadPresets}
+              className="text-xs text-gray-400 underline hover:text-white"
+            >
+              재시도
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-[180px_1fr] gap-6">
             {/* Sidebar */}

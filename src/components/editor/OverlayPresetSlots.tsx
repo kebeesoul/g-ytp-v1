@@ -53,10 +53,8 @@ export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPre
               }`}
             >
               <SlotThumb preset={preset} />
-              <span className={`text-[10px] ${isSelected ? "text-blue-400" : "text-gray-500"}`}>
-                {preset.animation.animMemo
-                  ? preset.animation.animMemo.slice(0, 8) + (preset.animation.animMemo.length > 8 ? "…" : "")
-                  : `슬롯 ${i + 1}`}
+              <span className={`w-full truncate text-[10px] ${isSelected ? "text-blue-400" : "text-gray-500"}`}>
+                {preset.animation.animMemo ?? `슬롯 ${i + 1}`}
               </span>
             </button>
           );
@@ -77,7 +75,7 @@ function SlotThumb({ preset }: { preset: OverlayPreset }) {
 
   return (
     <div
-      className="relative flex h-9 w-full flex-col justify-end overflow-hidden rounded p-1"
+      className="flex h-9 w-full flex-col justify-end overflow-hidden rounded p-1"
       style={{ background: "linear-gradient(135deg,#1a1a2e,#0f3460)" }}
     >
       <div style={cardStyle}>

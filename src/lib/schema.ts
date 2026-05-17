@@ -40,8 +40,6 @@ export const OverlayPresetSchema = z.object({
     ]).default("bottom-left"),
     x: z.number().default(80),
     y: z.number().default(-160),
-    width: z.number().optional(),
-    height: z.number().optional(),
     safeMarginX: z.number().default(96),
     safeMarginY: z.number().default(72),
   }),

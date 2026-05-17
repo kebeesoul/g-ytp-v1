@@ -26,13 +26,17 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // Reset form when slot changes
+  // Sync draft/name when slot changes or preset is updated from outside (e.g. after save)
   useEffect(() => {
     setDraft(preset ?? defaultDraft(slotId));
     setName(preset?.animation.animMemo ?? "");
     setError(null);
-    setSaved(false);
   }, [slotId, preset]);
+
+  // Reset saved indicator only when navigating to a different slot
+  useEffect(() => {
+    setSaved(false);
+  }, [slotId]);
 
   function set<K extends keyof OverlayPreset>(
     section: K,
@@ -48,6 +52,7 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     setError(null);
 
@@ -86,7 +91,6 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
             onChange={(e) => {
               setName(e.target.value);
               set("animation", "animMemo", e.target.value);
-              setSaved(false);
             }}
             placeholder="ex) 로파이 화이트"
             className={inputCls}
