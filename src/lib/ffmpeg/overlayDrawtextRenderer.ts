@@ -14,6 +14,8 @@ function escapeDrawtext(text: string): string {
 }
 
 // fade-in / fade-out alpha 표현식 생성
+// filter_complex_script 파서가 single-quote 안 쉼표도 필터 구분자로 오인하므로
+// if(lt(t,X),Y,Z) 대신 조건 곱셈((t>=X)*(t<Y)*value)으로 쉼표를 완전히 제거한다.
 function buildAlphaExpr(
   tStart: number,
   tEnd: number,
@@ -21,25 +23,25 @@ function buildAlphaExpr(
   fadeOut: number,
   hasFadeOut: boolean
 ): string {
-  const tStartS = tStart.toFixed(3);
-  const tEndS = tEnd.toFixed(3);
-  const fadeInS = fadeIn.toFixed(3);
-  const fadeOutS = fadeOut.toFixed(3);
-  const tFadeOutStart = (tEnd - fadeOut).toFixed(3);
+  const s = tStart.toFixed(3);
+  const e = tEnd.toFixed(3);
+  const fi = fadeIn.toFixed(3);
+  const fo = fadeOut.toFixed(3);
+  const fiEnd = (tStart + fadeIn).toFixed(3);
+  const foStart = (tEnd - fadeOut).toFixed(3);
 
   if (hasFadeOut) {
-    // fade-in + hold + fade-out
+    // fade-in segment + hold segment + fade-out segment — no commas
     return (
-      `if(lt(t,${tStartS}),0,` +
-      `if(lt(t,${tStartS}+${fadeInS}),(t-${tStartS})/${fadeInS},` +
-      `if(lt(t,${tFadeOutStart}),1,` +
-      `if(lt(t,${tEndS}),(${tEndS}-t)/${fadeOutS},0))))`
+      `(t>=${s})*(t<${fiEnd})*(t-${s})/${fi}` +
+      `+(t>=${fiEnd})*(t<${foStart})` +
+      `+(t>=${foStart})*(t<${e})*(${e}-t)/${fo}`
     );
   }
-  // fade-in only
+  // fade-in then hold at 1 — no commas
   return (
-    `if(lt(t,${tStartS}),0,` +
-    `if(lt(t,${tStartS}+${fadeInS}),(t-${tStartS})/${fadeInS},1))`
+    `(t>=${s})*(t<${fiEnd})*(t-${s})/${fi}` +
+    `+(t>=${fiEnd})`
   );
 }
 
