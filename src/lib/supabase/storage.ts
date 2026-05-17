@@ -25,6 +25,30 @@ export async function downloadFromStorage(path: string): Promise<Buffer> {
   return Buffer.from(await data.arrayBuffer());
 }
 
+// Stream a storage file directly to disk without buffering the whole file in RAM.
+// Uses a raw authenticated fetch so the response body is piped via Node.js streams.
+export async function downloadToFile(storagePath: string, localPath: string): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+  const res = await fetch(
+    `${supabaseUrl}/storage/v1/object/${BUCKET}/${storagePath}`,
+    { headers: { Authorization: `Bearer ${serviceKey}` } }
+  );
+  if (!res.ok || !res.body) {
+    throw new Error(`Storage stream download failed [${storagePath}]: ${res.status}`);
+  }
+
+  const { createWriteStream } = await import("node:fs");
+  const { pipeline } = await import("node:stream/promises");
+  const { Readable } = await import("node:stream");
+
+  await pipeline(
+    Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
+    createWriteStream(localPath)
+  );
+}
+
 export async function copyInStorage(fromPath: string, toPath: string): Promise<void> {
   const { error } = await supabaseServer.storage
     .from(BUCKET)

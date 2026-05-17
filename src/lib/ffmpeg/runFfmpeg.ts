@@ -18,6 +18,8 @@ export function runFfmpeg(options: RunFfmpegOptions): Promise<void> {
     if (jobId) activeProcesses.set(jobId, proc);
 
     let stderrBuf = "";
+    // Cap stderr buffer to prevent unbounded memory growth during long renders
+    const MAX_STDERR_BYTES = 64 * 1024;
 
     proc.stdout?.on("data", (chunk: Buffer) => {
       onStdout?.(chunk);
@@ -25,6 +27,9 @@ export function runFfmpeg(options: RunFfmpegOptions): Promise<void> {
 
     proc.stderr?.on("data", (chunk: Buffer) => {
       stderrBuf += chunk.toString();
+      if (stderrBuf.length > MAX_STDERR_BYTES) {
+        stderrBuf = stderrBuf.slice(-MAX_STDERR_BYTES);
+      }
     });
 
     proc.on("close", (code) => {

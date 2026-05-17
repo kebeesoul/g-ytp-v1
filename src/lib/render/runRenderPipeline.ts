@@ -1,13 +1,12 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { supabaseServer } from "@/lib/supabase/server";
 import {
-  downloadFromStorage,
+  downloadToFile,
   copyInStorage,
   uploadToStorage,
 } from "@/lib/supabase/storage";
-import { concatAudio } from "@/lib/ffmpeg/concatAudio";
-import { normalizeAudio } from "@/lib/ffmpeg/normalizeAudio";
+import { concatAndNormalize } from "@/lib/ffmpeg/concatAndNormalize";
 import { renderVideo } from "@/lib/ffmpeg/renderVideo";
 import { extractThumbnail } from "@/lib/ffmpeg/thumbnail";
 import { generateTracklistText } from "@/lib/tracklist";
@@ -58,35 +57,22 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     const audioDir = getJobAudioDir(jobId);
     await mkdir(audioDir, { recursive: true });
 
-    const audioPaths: string[] = [];
-    for (const track of snapshot.tracks) {
-      const localName = basename(track.storagePath);
-      const localPath = join(audioDir, localName);
-      const buf = await downloadFromStorage(track.storagePath);
-      await writeFile(localPath, buf);
-      audioPaths.push(localPath);
-    }
-
     if (!snapshot.background) throw new Error("background is required");
     const bgLocalName = basename(snapshot.background.storagePath);
     const bgLocalPath = join(workDir, bgLocalName);
-    const bgBuf = await downloadFromStorage(snapshot.background.storagePath);
-    await writeFile(bgLocalPath, bgBuf);
 
+    // A: Download tracks (up to 3 concurrent) and background simultaneously
+    const [audioPaths] = await Promise.all([
+      downloadTracksParallel(snapshot.tracks, audioDir),
+      downloadToFile(snapshot.background.storagePath, bgLocalPath),
+    ]);
     updateJobQueue(jobId, exportId, "running", 0.05, null, null);
 
-    const concatRawPath = await concatAudio({
+    // B: Concat + normalize in one pipeline — no intermediate WAV file
+    const concatM4aPath = await concatAndNormalize({
       jobId,
       audioPaths,
       transition: snapshot.renderConfig.transition,
-      workDir,
-    });
-    updateJobQueue(jobId, exportId, "running", 0.10, null, null);
-    await flushProgressToDB(jobId, 0.10, null);
-
-    const concatM4aPath = await normalizeAudio({
-      jobId,
-      inputPath: concatRawPath,
       workDir,
       audioConfig: snapshot.renderConfig.audio,
     });
@@ -117,19 +103,22 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       onProgress,
     });
 
+    // C: Extract thumbnail and upload tracklist concurrently
+    const tracklistText = generateTracklistText(snapshot);
     const thumbLocalPath = join(workDir, "thumbnail.jpg");
-    await extractThumbnail(outputPath, thumbLocalPath);
+
+    await Promise.all([
+      extractThumbnail(outputPath, thumbLocalPath),
+      uploadToStorage(
+        `export/${exportId}/tracklist.txt`,
+        Buffer.from(tracklistText, "utf8"),
+        "text/plain"
+      ),
+    ]);
+
     const thumbBuf = await readFileBuffer(thumbLocalPath);
     const thumbStoragePath = `import/${exportId}/thumbnail.jpg`;
     await uploadToStorage(thumbStoragePath, thumbBuf, "image/jpeg");
-
-    const tracklistText = generateTracklistText(snapshot);
-    const tracklistPath = `export/${exportId}/tracklist.txt`;
-    await uploadToStorage(
-      tracklistPath,
-      Buffer.from(tracklistText, "utf8"),
-      "text/plain"
-    );
 
     const completedAt = new Date().toISOString();
     await supabase
@@ -234,15 +223,18 @@ async function copyImportIfNeeded(
 
   if (!trackNeedsCopy && !bgNeedsCopy) return snapshot;
 
-  const updatedTracks: Track[] = await Promise.all(
-    snapshot.tracks.map(async (track) => {
-      if (track.storagePath.startsWith(prefix)) return track;
-      const filename = basename(track.storagePath);
-      const newPath = `${prefix}${filename}`;
-      await copyInStorage(track.storagePath, newPath);
-      return { ...track, storagePath: newPath };
-    })
-  );
+  // Sequential to avoid N concurrent Supabase connections spiking memory + bandwidth
+  const updatedTracks: Track[] = [];
+  for (const track of snapshot.tracks) {
+    if (track.storagePath.startsWith(prefix)) {
+      updatedTracks.push(track);
+      continue;
+    }
+    const filename = basename(track.storagePath);
+    const newPath = `${prefix}${filename}`;
+    await copyInStorage(track.storagePath, newPath);
+    updatedTracks.push({ ...track, storagePath: newPath });
+  }
 
   let updatedBg: Background | null = snapshot.background;
   if (updatedBg && !updatedBg.storagePath.startsWith(prefix)) {
@@ -258,4 +250,31 @@ async function copyImportIfNeeded(
 async function readFileBuffer(filePath: string): Promise<Buffer> {
   const { readFile } = await import("node:fs/promises");
   return readFile(filePath);
+}
+
+// A: Download up to CONCURRENCY tracks at a time to avoid saturating memory.
+// Order is preserved — audioPaths[i] corresponds to tracks[i].
+const DOWNLOAD_CONCURRENCY = 3;
+
+async function downloadTracksParallel(
+  tracks: Track[],
+  audioDir: string
+): Promise<string[]> {
+  const audioPaths = new Array<string>(tracks.length);
+  let nextIdx = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIdx < tracks.length) {
+      const i = nextIdx++;
+      const track = tracks[i];
+      const localPath = join(audioDir, basename(track.storagePath));
+      await downloadToFile(track.storagePath, localPath);
+      audioPaths[i] = localPath;
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, tracks.length) }, worker)
+  );
+  return audioPaths;
 }

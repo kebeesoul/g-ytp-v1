@@ -44,16 +44,10 @@ describe("parseFFmpegProgress", () => {
 });
 
 describe("computeGlobalProgress", () => {
-  it("concatAudio phase maps 0→0, 1→0.10", () => {
-    expect(computeGlobalProgress("concatAudio", 0)).toBeCloseTo(0, 5);
-    expect(computeGlobalProgress("concatAudio", 1)).toBeCloseTo(0.10, 5);
-    expect(computeGlobalProgress("concatAudio", 0.5)).toBeCloseTo(0.05, 5);
-  });
-
-  it("normalizeAudio phase maps 0→0.10, 1→0.15", () => {
-    expect(computeGlobalProgress("normalizeAudio", 0)).toBeCloseTo(0.10, 5);
-    expect(computeGlobalProgress("normalizeAudio", 1)).toBeCloseTo(0.15, 5);
-    expect(computeGlobalProgress("normalizeAudio", 0.5)).toBeCloseTo(0.125, 5);
+  it("concatAndNormalize phase maps 0→0, 1→0.15", () => {
+    expect(computeGlobalProgress("concatAndNormalize", 0)).toBeCloseTo(0, 5);
+    expect(computeGlobalProgress("concatAndNormalize", 1)).toBeCloseTo(0.15, 5);
+    expect(computeGlobalProgress("concatAndNormalize", 0.5)).toBeCloseTo(0.075, 5);
   });
 
   it("renderVideo phase maps 0→0.15, 1→1.0", () => {
@@ -63,8 +57,7 @@ describe("computeGlobalProgress", () => {
   });
 
   it("phase boundaries are contiguous", () => {
-    expect(PHASE_WEIGHT.concatAudio.end).toBe(PHASE_WEIGHT.normalizeAudio.start);
-    expect(PHASE_WEIGHT.normalizeAudio.end).toBe(PHASE_WEIGHT.renderVideo.start);
+    expect(PHASE_WEIGHT.concatAndNormalize.end).toBe(PHASE_WEIGHT.renderVideo.start);
   });
 });
 
