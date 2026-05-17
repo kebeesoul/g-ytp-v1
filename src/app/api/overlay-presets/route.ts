@@ -16,6 +16,10 @@ export async function GET(): Promise<Response> {
   if (!result.success) {
     return Response.json({ error: "preset schema mismatch" }, { status: 500 });
   }
-  const presets = result.data.map(rowToPreset);
+
+  const presets = result.data.flatMap((row) => {
+    const preset = rowToPreset(row);
+    return preset ? [preset] : [];
+  });
   return Response.json(presets);
 }

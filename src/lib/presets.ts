@@ -40,8 +40,8 @@ export const PresetRowSchema = z.object({
 
 export type PresetRow = z.infer<typeof PresetRowSchema>;
 
-export function rowToPreset(row: PresetRow): OverlayPreset {
-  return OverlayPresetSchema.parse({
+export function rowToPreset(row: PresetRow): OverlayPreset | null {
+  const result = OverlayPresetSchema.safeParse({
     id: row.id,
     version: row.version,
     renderer: row.renderer,
@@ -84,6 +84,7 @@ export function rowToPreset(row: PresetRow): OverlayPreset {
       animMemo: row.anim_memo ?? undefined,
     },
   });
+  return result.success ? result.data : null;
 }
 
 export function presetToRow(

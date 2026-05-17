@@ -42,5 +42,13 @@ export async function PATCH(req: Request, { params }: RouteParams): Promise<Resp
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  return Response.json(rowToPreset(PresetRowSchema.parse(data)));
+  const rowResult = PresetRowSchema.safeParse(data);
+  if (!rowResult.success) {
+    return Response.json({ error: "preset schema mismatch after upsert" }, { status: 500 });
+  }
+  const saved = rowToPreset(rowResult.data);
+  if (!saved) {
+    return Response.json({ error: "preset mapping failed after upsert" }, { status: 500 });
+  }
+  return Response.json(saved);
 }

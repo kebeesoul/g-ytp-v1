@@ -68,10 +68,14 @@ export async function POST(_req: Request, { params }: RouteParams): Promise<Resp
     return Response.json({ error: jobDeleteError.message }, { status: 500 });
   }
 
-  await supabaseServer
+  const { error: projectDeleteError } = await supabaseServer
     .from("projects")
     .delete()
     .eq("id", projectId);
+
+  if (projectDeleteError) {
+    return Response.json({ error: projectDeleteError.message }, { status: 500 });
+  }
 
   // Storage cleanup (best-effort — partial files must not persist)
   const [exportFiles, importFiles] = await Promise.all([

@@ -41,6 +41,8 @@ const SAMPLE_ROW = {
 describe("rowToPreset", () => {
   it("maps all fields correctly", () => {
     const preset = rowToPreset(SAMPLE_ROW);
+    expect(preset).not.toBeNull();
+    if (!preset) return;
     expect(preset.id).toBe("slot-1");
     expect(preset.layout.anchor).toBe("bottom-left");
     expect(preset.layout.x).toBe(80);
@@ -54,16 +56,24 @@ describe("rowToPreset", () => {
 
   it("handles null optional fields", () => {
     const preset = rowToPreset({ ...SAMPLE_ROW, color_bg: null, color_shadow: null, anim_memo: null });
+    expect(preset).not.toBeNull();
+    if (!preset) return;
     expect(preset.color.background).toBeUndefined();
     expect(preset.color.shadow).toBeUndefined();
     expect(preset.animation.animMemo).toBeUndefined();
+  });
+
+  it("returns null for invalid renderer", () => {
+    const preset = rowToPreset({ ...SAMPLE_ROW, renderer: "invalid" });
+    expect(preset).toBeNull();
   });
 });
 
 describe("presetToRow", () => {
   it("round-trips through rowToPreset → presetToRow", () => {
     const preset = rowToPreset(SAMPLE_ROW);
-    const row = presetToRow(preset, 1, "박스형");
+    expect(preset).not.toBeNull();
+    const row = presetToRow(preset!, 1, "박스형");
     expect(row.id).toBe("slot-1");
     expect(row.offset_x).toBe(80);
     expect(row.title_font_size).toBe(42);
