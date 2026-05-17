@@ -33,12 +33,10 @@ export function parseFFmpegProgress(
 }
 
 // phase별 가중치 (§12.5 진행률 범위 기준)
-// concat:   0.00 ~ 0.10
-// normalize: 0.10 ~ 0.15
-// video:     0.15 ~ 1.00
+// concatAndNormalize: 0.00 ~ 0.15  (concat+loudnorm 통합 단계)
+// video:              0.15 ~ 1.00
 export const PHASE_WEIGHT = {
-  concatAudio: { start: 0, end: 0.10 },
-  normalizeAudio: { start: 0.10, end: 0.15 },
+  concatAndNormalize: { start: 0, end: 0.15 },
   renderVideo: { start: 0.15, end: 1.0 },
 } as const;
 

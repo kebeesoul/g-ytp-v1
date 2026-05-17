@@ -33,8 +33,13 @@ export function useRenderJob(): UseRenderJobResult {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async (id: string): Promise<JobStatus | null> => {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 10_000);
     try {
-      const res = await fetch(`/api/render-status/${id}`, { cache: "no-store" });
+      const res = await fetch(`/api/render-status/${id}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       if (res.status === 404) {
         // DB에 없음 → localStorage 정리 (§9.1 매트릭스 마지막 행)
         localStorage.removeItem(LS_KEY);
@@ -48,6 +53,8 @@ export function useRenderJob(): UseRenderJobResult {
       return data;
     } catch {
       return null;
+    } finally {
+      clearTimeout(tid);
     }
   }, []);
 
@@ -65,6 +72,7 @@ export function useRenderJob(): UseRenderJobResult {
   }, [fetchStatus]);
 
   // 폴링 — status가 queued/running일 때만 5초마다
+  // status?.status (string primitive)를 dep으로 써서 같은 상태값이면 interval 재생성 안 함
   useEffect(() => {
     if (!jobId || !status) return;
     if (status.status === "done" || status.status === "error") {
@@ -80,7 +88,8 @@ export function useRenderJob(): UseRenderJobResult {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [jobId, status, fetchStatus]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, status?.status, fetchStatus]);
 
   const startRender = useCallback(
     async (snapshot: ProjectSnapshot, exportId: string): Promise<void> => {

@@ -3,7 +3,12 @@ import { join } from "node:path";
 import type { ProjectSnapshot } from "@/lib/schema";
 import { computeTrackTimings } from "@/lib/timecode";
 import { resolveOverlayPreset } from "@/lib/design/presetRegistry";
-import { compileOverlayFilters } from "./overlayCompiler";
+import { compileOverlayFilters, resolveOverlayTimings } from "./overlayCompiler";
+import {
+  generatePngCards,
+  buildPngCardOverlayLines,
+  type PngCardSpec,
+} from "./overlayPngRenderer";
 import { parseFFmpegProgress, computeEtaSec } from "./parseProgress";
 import { runFfmpeg } from "./runFfmpeg";
 
@@ -37,16 +42,6 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     : 0;
 
   const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
-  const overlayFilters = compileOverlayFilters(
-    tracks,
-    trackStartSecs,
-    overlay.displayMode,
-    preset
-  );
-
-  const filterScript = buildFilterScript(bg, overlayFilters);
-  const filterScriptPath = join(workDir, "filters.txt");
-  await writeFile(filterScriptPath, filterScript, "utf8");
 
   const useVideotoolbox =
     hwaccel === "videotoolbox" && process.env.HWACCEL_DISABLED !== "1";
@@ -57,16 +52,58 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
 
   const videoCodecArgs: string[] = useVideotoolbox
     ? ["-c:v", "h264_videotoolbox", "-q:v", "60"]
-    : ["-c:v", "libx264", "-preset", "medium", "-crf", "18"];
+    : ["-c:v", "libx264", "-preset", "fast", "-crf", "18"];
 
   const formatArgs: string[] = outputFormat === "mp4"
     ? ["-movflags", "+faststart"]
     : [];
 
+  let filterScript: string;
+  let extraInputs: string[] = [];
+
+  if (preset.renderer === "png_card" && overlay.displayMode !== "0") {
+    // Pre-render one transparent PNG per track, then overlay with fade
+    const specs: PngCardSpec[] = [];
+    for (let i = 0; i < tracks.length; i++) {
+      const timing = resolveOverlayTimings(trackStartSecs[i], tracks[i].durationSec, overlay.displayMode);
+      if (timing.skip) continue;
+      specs.push({
+        localPath: join(workDir, `card_${i}.png`),
+        track: tracks[i],
+        tStart: timing.tStart,
+        tEnd: timing.tEnd,
+        fadeOut: timing.fadeOut,
+      });
+    }
+
+    await generatePngCards(specs, preset);
+    extraInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
+
+    // 0=bg, 1=audio, 2..N=png cards
+    const bgFilter = buildBgFilter(bg);
+    const overlayLines = buildPngCardOverlayLines(specs, 2, preset);
+    filterScript = overlayLines.length === 0
+      ? `${bgFilter};\n[_bgproc]copy[vout]`
+      : `${bgFilter};\n${overlayLines.join(";\n")}`;
+  } else {
+    // drawtext path (or displayMode "0")
+    const overlayFilters = compileOverlayFilters(
+      tracks,
+      trackStartSecs,
+      overlay.displayMode,
+      preset
+    );
+    filterScript = buildFilterScript(bg, overlayFilters);
+  }
+
+  const filterScriptPath = join(workDir, "filters.txt");
+  await writeFile(filterScriptPath, filterScript, "utf8");
+
   const args: string[] = [
     "-y",
     ...bgInput,
     "-i", audioLocalPath,
+    ...extraInputs,
     "-filter_complex_script", filterScriptPath,
     "-map", "[vout]",
     "-map", "1:a",
@@ -104,29 +141,33 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   onProgress?.(1.0, null);
 }
 
-function buildFilterScript(
-  bg: ProjectSnapshot["background"],
-  overlayFilters: string[]
-): string {
+function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   const fit = bg?.fit ?? "cover";
   const dim = bg?.dim ?? 0.25;
   const blur = bg?.blur ?? 0;
 
-  let bgFilter: string;
-
   if (fit === "blurred_contain") {
     const blurVal = blur > 0 ? blur : 20;
-    bgFilter =
+    return (
       `[0:v]split[_bg1][_bg2];\n` +
       `[_bg1]scale=1920:1080:force_original_aspect_ratio=increase,` +
       `crop=1920:1080,boxblur=${blurVal}:1[_blurred];\n` +
       `[_bg2]scale=1920:1080:force_original_aspect_ratio=decrease[_fg];\n` +
-      `[_blurred][_fg]overlay=(W-w)/2:(H-h)/2,eq=brightness=${(-dim).toFixed(3)}[_bgproc]`;
-  } else {
-    bgFilter =
-      `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,` +
-      `crop=1920:1080,eq=brightness=${(-dim).toFixed(3)}[_bgproc]`;
+      `[_blurred][_fg]overlay=(W-w)/2:(H-h)/2,eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
+    );
   }
+
+  return (
+    `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,` +
+    `crop=1920:1080,eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
+  );
+}
+
+function buildFilterScript(
+  bg: ProjectSnapshot["background"],
+  overlayFilters: string[]
+): string {
+  const bgFilter = buildBgFilter(bg);
 
   if (overlayFilters.length === 0) {
     return `${bgFilter};\n[_bgproc]copy[vout]`;

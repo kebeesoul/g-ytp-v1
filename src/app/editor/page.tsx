@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
   ProjectRecordSchema,
@@ -200,7 +200,11 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
     }
   }
 
-  const snapshot = buildSnapshot();
+  const snapshot = useMemo(
+    () => buildSnapshot(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [title, tracks, background, transitionType, crossfadeSec, overlayMode, outputFormat, hashtags]
+  );
   const snapshotValid = !("error" in snapshot);
 
   if (hydrateLoading) {
