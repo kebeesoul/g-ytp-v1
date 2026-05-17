@@ -1,5 +1,6 @@
+import { z } from "zod";
 import { supabaseServer } from "@/lib/supabase/server";
-import { rowToPreset, type PresetRow } from "@/lib/presets";
+import { rowToPreset, PresetRowSchema } from "@/lib/presets";
 
 export async function GET(): Promise<Response> {
   const { data, error } = await supabaseServer
@@ -11,6 +12,7 @@ export async function GET(): Promise<Response> {
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  const presets = (data as PresetRow[]).map(rowToPreset);
+  const rows = z.array(PresetRowSchema).parse(data);
+  const presets = rows.map(rowToPreset);
   return Response.json(presets);
 }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { supabaseServer } from "@/lib/supabase/server";
 import { OverlayPresetSchema } from "@/lib/schema";
-import { presetToRow, rowToPreset, type PresetRow } from "@/lib/presets";
+import { presetToRow, rowToPreset, PresetRowSchema } from "@/lib/presets";
 
 const VALID_SLOT_IDS = new Set(["slot-1", "slot-2", "slot-3", "slot-4", "slot-5", "slot-6"]);
 
@@ -42,5 +42,5 @@ export async function PATCH(req: Request, { params }: RouteParams): Promise<Resp
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  return Response.json(rowToPreset(data as PresetRow));
+  return Response.json(rowToPreset(PresetRowSchema.parse(data)));
 }

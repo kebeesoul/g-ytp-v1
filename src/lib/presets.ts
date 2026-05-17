@@ -1,41 +1,44 @@
+import { z } from "zod";
 import { OverlayPresetSchema, type OverlayPreset } from "@/lib/schema";
 
-export type PresetRow = {
-  id: string;
-  slot_index: number;
-  name: string;
-  version: number;
-  renderer: string;
-  anchor: string;
-  offset_x: number;
-  offset_y: number;
-  safe_margin_x: number;
-  safe_margin_y: number;
-  artist_font_family: string;
-  artist_font_size: number;
-  artist_weight: number;
-  title_font_family: string;
-  title_font_size: number;
-  title_weight: number;
-  text_align: string;
-  line_height: number;
-  letter_spacing: number;
-  max_lines_title: number;
-  color_artist: string;
-  color_title: string;
-  color_bg: string | null;
-  color_shadow: string | null;
-  card_enabled: boolean;
-  card_padding_x: number;
-  card_padding_y: number;
-  card_radius: number;
-  card_blur: number;
-  card_opacity: number;
-  fade_in_sec: number;
-  fade_out_sec: number;
-  anim_memo: string | null;
-  updated_at: string;
-};
+export const PresetRowSchema = z.object({
+  id: z.string(),
+  slot_index: z.number(),
+  name: z.string(),
+  version: z.number(),
+  renderer: z.string(),
+  anchor: z.string(),
+  offset_x: z.number(),
+  offset_y: z.number(),
+  safe_margin_x: z.number(),
+  safe_margin_y: z.number(),
+  artist_font_family: z.string(),
+  artist_font_size: z.number(),
+  artist_weight: z.number(),
+  title_font_family: z.string(),
+  title_font_size: z.number(),
+  title_weight: z.number(),
+  text_align: z.string(),
+  line_height: z.number(),
+  letter_spacing: z.number(),
+  max_lines_title: z.number(),
+  color_artist: z.string(),
+  color_title: z.string(),
+  color_bg: z.string().nullable(),
+  color_shadow: z.string().nullable(),
+  card_enabled: z.boolean(),
+  card_padding_x: z.number(),
+  card_padding_y: z.number(),
+  card_radius: z.number(),
+  card_blur: z.number(),
+  card_opacity: z.number(),
+  fade_in_sec: z.number(),
+  fade_out_sec: z.number(),
+  anim_memo: z.string().nullable(),
+  updated_at: z.string(),
+});
+
+export type PresetRow = z.infer<typeof PresetRowSchema>;
 
 export function rowToPreset(row: PresetRow): OverlayPreset {
   return OverlayPresetSchema.parse({
