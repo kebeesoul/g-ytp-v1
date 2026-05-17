@@ -52,7 +52,7 @@ const BASE_SNAPSHOT: ProjectSnapshot = {
     fit: "cover",
     dim: 0.25,
     blur: 0,
-    cropPosition: "center",
+    cropY: 0.5,
   },
   renderConfig: {
     transition: { type: "crossfade", crossfadeSec: 2 },
@@ -123,7 +123,7 @@ describe("§3.2 복원 보장 — 8개 항목 스키마 검증", () => {
   });
 
   it("항목 5: 비디오 배경도 보존된다", () => {
-    const videoBg = { kind: "video" as const, storagePath: "import/export-id/bg.mp4", durationSec: 120, fit: "cover" as const, dim: 0.25, blur: 0, cropPosition: "center" as const };
+    const videoBg = { kind: "video" as const, storagePath: "import/export-id/bg.mp4", durationSec: 120, fit: "cover" as const, dim: 0.25, blur: 0, cropY: 0.5 };
     const r = ProjectSnapshotSchema.safeParse({ ...BASE_SNAPSHOT, background: videoBg });
     expect(r.success).toBe(true);
     expect(r.data?.background?.kind).toBe("video");

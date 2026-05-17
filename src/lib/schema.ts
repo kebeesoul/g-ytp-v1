@@ -20,7 +20,7 @@ export const BackgroundSchema = z.object({
   fit: z.enum(["cover", "contain", "blurred_contain"]).default("cover"),
   dim: z.number().min(0).max(1).default(0.25),
   blur: z.number().min(0).max(50).default(0),
-  cropPosition: z.enum(["center", "top", "bottom"]).default("center"),
+  cropY: z.number().min(0).max(1).default(0.5),
 });
 export type Background = z.infer<typeof BackgroundSchema>;
 

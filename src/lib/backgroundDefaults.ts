@@ -6,7 +6,7 @@ export const BG_DEFAULTS = {
   fit: "cover" as const,
   dim: 0.25,
   blur: 0,
-  cropPosition: "center" as const,
+  cropY: 0.5,
 };
 
 export function applyBgDefaults(

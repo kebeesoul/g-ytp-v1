@@ -188,13 +188,17 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   const fit = bg?.fit ?? "cover";
   const dim = bg?.dim ?? 0.25;
   const blur = bg?.blur ?? 0;
+  const cropY = bg?.cropY ?? 0.5;
+  // Center horizontally, position vertically by cropY (0=top, 0.5=center, 1=bottom).
+  // For landscape inputs in_h==1080, so y==0 regardless of cropY.
+  const cropExpr = `crop=1920:1080:(in_w-1920)/2:(in_h-1080)*${cropY.toFixed(3)}`;
 
   if (fit === "blurred_contain") {
     const blurVal = blur > 0 ? blur : 20;
     return (
       `[0:v]split[_bg1][_bg2];\n` +
       `[_bg1]scale=1920:1080:force_original_aspect_ratio=increase,` +
-      `crop=1920:1080,boxblur=${blurVal}:1[_blurred];\n` +
+      `${cropExpr},boxblur=${blurVal}:1[_blurred];\n` +
       `[_bg2]scale=1920:1080:force_original_aspect_ratio=decrease[_fg];\n` +
       `[_blurred][_fg]overlay=(W-w)/2:(H-h)/2,eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
     );
@@ -202,7 +206,7 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
 
   return (
     `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,` +
-    `crop=1920:1080,eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
+    `${cropExpr},eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
   );
 }
 

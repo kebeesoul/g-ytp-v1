@@ -63,6 +63,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [crossfadeSec] = useState(2);
   const [overlayMode, setOverlayMode] = useState<"0" | "2" | "5" | "full">("5");
   const [hashtags, setHashtags] = useState<string[]>([]);
+  // Separate input state — only synced to hashtags on blur to avoid per-keystroke snapshot updates.
+  const [hashtagInput, setHashtagInput] = useState("");
   const [outputFormat, setOutputFormat] = useState<"mp4" | "mov">("mp4");
 
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
@@ -118,6 +120,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
         setTransitionType(snapshot.renderConfig.transition.type);
         setOverlayMode(snapshot.renderConfig.overlay.displayMode);
         setHashtags(snapshot.hashtags);
+        setHashtagInput(snapshot.hashtags.join(", "));
         setOutputFormat(snapshot.renderConfig.outputFormat);
         setHydrateLoading(false);
       } catch (err) {
@@ -296,15 +299,15 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
               <span className="text-xs text-gray-400">해시태그 (쉼표 구분)</span>
               <input
                 type="text"
-                value={hashtags.join(", ")}
-                onChange={(e) =>
-                  setHashtags(
-                    e.target.value
-                      .split(",")
-                      .map((h) => h.trim())
-                      .filter(Boolean)
-                  )
-                }
+                value={hashtagInput}
+                onChange={(e) => setHashtagInput(e.target.value)}
+                onBlur={(e) => {
+                  const parsed = e.target.value
+                    .split(",")
+                    .map((h) => h.trim())
+                    .filter(Boolean);
+                  setHashtags(parsed);
+                }}
                 placeholder="#lofi, #chill"
                 className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
               />
