@@ -32,17 +32,17 @@ function buildAlphaExpr(
   const foStart = (tEnd - fadeOut).toFixed(3);
 
   if (hasFadeOut) {
-    // fade-in segment + hold segment + fade-out segment — no commas
+    // fade-in segment + hold segment + fade-out segment — no commas, no >= (unsupported in eval)
     return (
-      `(t>=${s})*(t<${fiEnd})*(t-${s})/${fi}` +
-      `+(t>=${fiEnd})*(t<${foStart})` +
-      `+(t>=${foStart})*(t<${e})*(${e}-t)/${fo}`
+      `(t>${s})*(t<${fiEnd})*(t-${s})/${fi}` +
+      `+(t>${fiEnd})*(t<${foStart})` +
+      `+(t>${foStart})*(t<${e})*(${e}-t)/${fo}`
     );
   }
-  // fade-in then hold at 1 — no commas
+  // fade-in then hold at 1 — no commas, no >=
   return (
-    `(t>=${s})*(t<${fiEnd})*(t-${s})/${fi}` +
-    `+(t>=${fiEnd})`
+    `(t>${s})*(t<${fiEnd})*(t-${s})/${fi}` +
+    `+(t>${fiEnd})`
   );
 }
 
@@ -63,9 +63,8 @@ export function compileDrawtextFilters(
     fadeOut
   );
 
-  // Use comparison operators instead of between(t,X,Y) — commas inside between()
-  // are misread as filter separators by the filter_complex_script parser.
-  const enable = `(t>=${tStart.toFixed(3)})*(t<=${tEnd.toFixed(3)})`;
+  // Use > and < (not >= / <=) — this FFmpeg eval does not parse >= as a single operator.
+  const enable = `(t>${tStart.toFixed(3)})*(t<${tEnd.toFixed(3)})`;
 
   // y 계산: layout.y < 0 → 하단 기준 (h + layout.y)
   const yBase = layout.y < 0 ? `h${layout.y}` : `${layout.y}`;

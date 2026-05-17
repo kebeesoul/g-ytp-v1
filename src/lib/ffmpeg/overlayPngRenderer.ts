@@ -114,8 +114,9 @@ export function buildPngCardOverlayLines(
       : "";
 
     lines.push(`[${inputIdx}:v]${fadeInFilter}${fadeOutFilter}[${cardLabel}]`);
+    // Use > and < (not >= / <=) — this FFmpeg eval does not parse >= as a single operator.
     lines.push(
-      `[${prevLabel}][${cardLabel}]overlay=enable='(t>=${tStart.toFixed(3)})*(t<=${tEnd.toFixed(3)})'[${nextLabel}]`
+      `[${prevLabel}][${cardLabel}]overlay=enable='(t>${tStart.toFixed(3)})*(t<${tEnd.toFixed(3)})'[${nextLabel}]`
     );
     prevLabel = nextLabel;
   }
