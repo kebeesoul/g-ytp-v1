@@ -143,8 +143,10 @@ export const ProjectRecordSchema = z.object({
   thumbnail_path: z.string().nullable(),
   export_folder: z.string(),
   latest_job_id: z.string().uuid().nullable(),
-  exported_at: z.string().datetime().nullable(),
-  created_at: z.string().datetime(),
+  // Supabase returns timestamps as "2026-05-16 21:14:00.903842+00" (space, microseconds, +00)
+  // which doesn't satisfy z.string().datetime() strict ISO 8601 — use z.string() instead.
+  exported_at: z.string().nullable(),
+  created_at: z.string(),
 });
 export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
 
@@ -157,9 +159,9 @@ export const RenderJobRecordSchema = z.object({
   eta_sec: z.number().nullable(),
   output_path: z.string().nullable(),
   error_msg: z.string().nullable(),
-  started_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-  completed_at: z.string().datetime().nullable(),
+  started_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable(),
 });
 export type RenderJobRecord = z.infer<typeof RenderJobRecordSchema>;
 
