@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import type { OverlayPreset } from "@/lib/schema";
 
 interface OverlayPresetSlotsProps {
@@ -22,7 +23,6 @@ export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPre
       <div className="grid grid-cols-3 gap-2">
         {presets.map((preset, i) => {
           const slotId = `slot-${i + 1}`;
-          const isSelected = selectedId === slotId;
           const isEmpty = preset === null;
 
           if (isEmpty) {
@@ -40,10 +40,12 @@ export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPre
             );
           }
 
+          const isSelected = selectedId === preset.id;
+
           return (
             <button
               key={slotId}
-              onClick={() => onChange(slotId)}
+              onClick={() => onChange(preset.id)}
               className={`flex flex-col items-center gap-1 rounded-md border p-2 text-center transition-colors ${
                 isSelected
                   ? "border-blue-500 bg-blue-500/10"
@@ -65,7 +67,7 @@ export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPre
 }
 
 function SlotThumb({ preset }: { preset: OverlayPreset }) {
-  const cardStyle: React.CSSProperties = preset.card.enabled
+  const cardStyle: CSSProperties = preset.card.enabled
     ? {
         background: preset.color.background ?? "rgba(0,0,0,0.55)",
         borderRadius: Math.round(preset.card.radius / 4),
