@@ -42,9 +42,11 @@ export async function POST(_req: Request, { params }: RouteParams): Promise<Resp
   const proc = activeProcesses.get(jobId);
   if (proc) {
     proc.kill("SIGTERM");
-    setTimeout(() => {
+    const sigkillTimer = setTimeout(() => {
       if (!proc.killed) proc.kill("SIGKILL");
     }, 2000);
+    // Clear timer if process exits before the 2s window
+    proc.once("exit", () => clearTimeout(sigkillTimer));
   }
 
   // DB cleanup: delink job first to release FK, then delete both records
