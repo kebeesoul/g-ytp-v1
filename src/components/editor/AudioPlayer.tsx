@@ -41,6 +41,8 @@ export function AudioPlayer({ storagePath, trackId }: AudioPlayerProps) {
     ws.on("ready", () => {
       setDuration(ws.getDuration());
       setReady(true);
+      ws.play();
+      setPlaying(true);
     });
 
     ws.on("timeupdate", (t) => setCurrentTime(t));
