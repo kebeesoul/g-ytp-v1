@@ -91,7 +91,8 @@ export type OverlayConfig = z.infer<typeof OverlayConfigSchema>;
 
 // ─── 오디오 설정 ─────────────────────────────────────────────────────────────
 export const AudioConfigSchema = z.object({
-  normalize: z.enum(["off", "ebu_r128"]).default("ebu_r128"),
+  // ebu_r128: two-pass accurate / ebu_r128_fast: single-pass (saves ~10 min per hour of audio)
+  normalize: z.enum(["off", "ebu_r128", "ebu_r128_fast"]).default("ebu_r128_fast"),
   targetLufs: z.number().default(-14),
   truePeakDb: z.number().default(-1),
 });

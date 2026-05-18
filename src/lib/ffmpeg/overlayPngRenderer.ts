@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import type { Track, OverlayPreset } from "@/lib/schema";
 import { runFfmpeg } from "./runFfmpeg";
 
@@ -83,7 +84,45 @@ async function generateSinglePng(
       "-f", "lavfi",
       "-i", "color=c=black@0.0:s=1920x1080",
       "-vframes", "1",
-      "-vf", `${artistFilter},${titleFilter}`,
+      // format=rgba before drawtext prevents yuv420p conversion that strips alpha.
+      // -pix_fmt rgba ensures the PNG is saved as RGBA (transparent background).
+      "-vf", `format=rgba,${artistFilter},${titleFilter}`,
+      "-pix_fmt", "rgba",
+      outputPath,
+    ],
+  });
+}
+
+// Pre-render all card overlays onto a transparent RGBA base, producing a single
+// overlay video. The caller then composites this once onto the background instead
+// of running N sequential overlay ops per frame in the main render.
+// Input 0 = lavfi transparent base; inputs 1..N = PNG cards (loop 1).
+export async function prerenderOverlayTrack(
+  specs: PngCardSpec[],
+  preset: OverlayPreset,
+  totalDurationSec: number,
+  outputPath: string,
+  scriptPath: string
+): Promise<void> {
+  if (specs.length === 0) return;
+
+  // Cards start at input index 1 (lavfi transparent base is input 0).
+  const overlayLines = buildPngCardOverlayLines(specs, 1, preset);
+  const filterScript = "[0:v]format=rgba[_bgproc];\n" + overlayLines.join(";\n");
+  await writeFile(scriptPath, filterScript, "utf8");
+
+  const cardInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
+
+  await runFfmpeg({
+    args: [
+      "-y",
+      "-f", "lavfi",
+      "-i", `color=c=black@0.0:s=1920x1080:r=30:d=${totalDurationSec.toFixed(3)}`,
+      ...cardInputs,
+      "-filter_complex_script", scriptPath,
+      "-map", "[vout]",
+      "-c:v", "qtrle",     // lossless RLE — efficient for mostly-transparent video
+      "-pix_fmt", "argb",  // 32-bit RGBA preserves transparency
       outputPath,
     ],
   });

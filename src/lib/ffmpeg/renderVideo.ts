@@ -6,7 +6,7 @@ import { resolveOverlayPreset } from "@/lib/design/presetRegistry";
 import { compileOverlayFilters, resolveOverlayTimings } from "./overlayCompiler";
 import {
   generatePngCards,
-  buildPngCardOverlayLines,
+  prerenderOverlayTrack,
   type PngCardSpec,
 } from "./overlayPngRenderer";
 import { parseFFmpegProgress, computeEtaSec } from "./parseProgress";
@@ -83,8 +83,14 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   const useVideotoolbox =
     hwaccel === "videotoolbox" && process.env.HWACCEL_DISABLED !== "1";
 
+  // Hardware decode for video backgrounds (VideoToolbox, nv12 keeps frames CPU-accessible).
   const bgInput: string[] = bgKind === "video"
-    ? ["-stream_loop", "-1", "-i", bgLocalPath]
+    ? [
+        ...(useVideotoolbox
+          ? ["-hwaccel", "videotoolbox", "-hwaccel_output_format", "nv12"]
+          : []),
+        "-stream_loop", "-1", "-i", bgLocalPath,
+      ]
     : ["-loop", "1", "-i", bgLocalPath];
 
   const videoCodecArgs: string[] = useVideotoolbox
@@ -120,14 +126,23 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       await generatePngCards(built, preset);
       specs = built;
     }
-    extraInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
 
-    // 0=bg, 1=audio, 2..N=png cards
     const bgFilter = buildBgFilter(bg);
-    const overlayLines = buildPngCardOverlayLines(specs, 2, preset);
-    filterScript = overlayLines.length === 0
-      ? `${bgFilter};\n[_bgproc]copy[vout]`
-      : `${bgFilter};\n${overlayLines.join(";\n")}`;
+
+    if (specs.length === 0) {
+      filterScript = `${bgFilter};\n[_bgproc]copy[vout]`;
+    } else {
+      // Pre-render all N card overlays onto a transparent RGBA track, then
+      // composite once onto the background. Reduces N sequential overlay ops
+      // per frame (slow, CPU-bound) to a single alpha blend (fast).
+      // Input layout after pre-render: 0=bg, 1=audio, 2=overlay.mov
+      const overlayVideoPath = join(workDir, "overlay.mov");
+      const overlayScriptPath = join(workDir, "overlay_filters.txt");
+      await prerenderOverlayTrack(specs, preset, totalAudioSec, overlayVideoPath, overlayScriptPath);
+
+      extraInputs = ["-i", overlayVideoPath];
+      filterScript = `${bgFilter};\n[_bgproc][2:v]overlay=eof_action=pass[vout]`;
+    }
   } else {
     // drawtext path (or displayMode "0")
     const overlayFilters = compileOverlayFilters(

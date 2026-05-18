@@ -85,11 +85,30 @@ export async function concatAndNormalize(
     return outputPath;
   }
 
-  // Two-pass EBU R128 loudnorm — no WAV intermediate
   const { targetLufs, truePeakDb } = audioConfig;
   const lra = 11;
   const loudnormBase = `loudnorm=I=${targetLufs}:TP=${truePeakDb}:LRA=${lra}`;
 
+  if (audioConfig.normalize === "ebu_r128_fast") {
+    // Single-pass loudnorm: no measurement pass. ~50% faster on long mixes.
+    // EBU R128 target is still met; integrated measurement is less precise than two-pass.
+    const fastFilter = buildFilterComplex(filterLines, outLabel, loudnormBase);
+    await runFfmpeg({
+      jobId,
+      args: [
+        "-y",
+        ...inputs,
+        "-filter_complex", fastFilter,
+        "-map", "[aout]",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        outputPath,
+      ],
+    });
+    return outputPath;
+  }
+
+  // Two-pass EBU R128 loudnorm — no WAV intermediate
   // Pass 1: measure loudness (output discarded)
   const pass1Filter = buildFilterComplex(filterLines, outLabel, `${loudnormBase}:print_format=json`);
   const pass1Stderr = await captureLoudnormStats(jobId, inputs, pass1Filter);
