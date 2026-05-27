@@ -99,14 +99,17 @@ export function RenderPanel({
         </div>
       )}
 
-      {/* 다운로드 (현재 세션 한정) */}
+      {/* 완료 메시지 + 다운로드 (현재 세션 한정) */}
       {isDone && jobId && (
-        <a
-          href={`/api/download/${jobId}`}
-          className="inline-flex items-center justify-center rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500"
-        >
-          ⬇ 다운로드
-        </a>
+        <div className="mt-auto flex flex-col gap-2">
+          <p className="text-sm font-medium text-green-400">Export complete</p>
+          <a
+            href={`/api/download/${jobId}`}
+            className="inline-flex items-center justify-center rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500"
+          >
+            ⬇ 다운로드
+          </a>
+        </div>
       )}
 
       {/* 에러 */}
