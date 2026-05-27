@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { z } from "zod";
 import type { AudioConfig, TransitionConfig } from "@/lib/schema";
 import { activeProcesses } from "@/lib/render/processRegistry";
 import { runFfmpeg } from "./runFfmpeg";
@@ -12,13 +13,14 @@ export interface ConcatAndNormalizeOptions {
   audioConfig: AudioConfig;
 }
 
-interface LoudnormStats {
-  input_i: string;
-  input_tp: string;
-  input_lra: string;
-  input_thresh: string;
-  target_offset: string;
-}
+const LoudnormStatsSchema = z.object({
+  input_i: z.string(),
+  input_tp: z.string(),
+  input_lra: z.string(),
+  input_thresh: z.string(),
+  target_offset: z.string(),
+});
+type LoudnormStats = z.infer<typeof LoudnormStatsSchema>;
 
 // Returns the filter_complex lines for audio concat and the output stream label.
 // Single-track case needs no filter — returns empty filterLines and "0:a" as direct input.
@@ -175,9 +177,9 @@ function captureLoudnormStats(
 function parseLoudnormJson(stderr: string): LoudnormStats {
   const match = stderr.match(/\{[\s\S]*?\}/);
   if (!match) throw new Error("concatAndNormalize: loudnorm JSON not found in ffmpeg output");
-  const parsed: unknown = JSON.parse(match[0]);
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("concatAndNormalize: invalid loudnorm JSON");
+  const result = LoudnormStatsSchema.safeParse(JSON.parse(match[0]));
+  if (!result.success) {
+    throw new Error(`concatAndNormalize: loudnorm JSON missing required fields: ${result.error.issues[0]?.message}`);
   }
-  return parsed as LoudnormStats;
+  return result.data;
 }

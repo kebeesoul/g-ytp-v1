@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { z } from "zod";
 import type { AudioConfig } from "@/lib/schema";
 import { activeProcesses } from "@/lib/render/processRegistry";
 import { runFfmpeg } from "./runFfmpeg";
@@ -11,18 +12,14 @@ export interface NormalizeAudioOptions {
   audioConfig: AudioConfig;
 }
 
-interface LoudnormStats {
-  input_i: string;
-  input_tp: string;
-  input_lra: string;
-  input_thresh: string;
-  output_i: string;
-  output_tp: string;
-  output_lra: string;
-  output_thresh: string;
-  normalization_type: string;
-  target_offset: string;
-}
+const LoudnormStatsSchema = z.object({
+  input_i: z.string(),
+  input_tp: z.string(),
+  input_lra: z.string(),
+  input_thresh: z.string(),
+  target_offset: z.string(),
+});
+type LoudnormStats = z.infer<typeof LoudnormStatsSchema>;
 
 export async function normalizeAudio(options: NormalizeAudioOptions): Promise<string> {
   const { jobId, inputPath, workDir, audioConfig } = options;
@@ -114,9 +111,9 @@ function parseLoudnormJson(stderr: string): LoudnormStats {
   if (!match) {
     throw new Error("normalizeAudio: loudnorm JSON not found in ffmpeg output");
   }
-  const parsed: unknown = JSON.parse(match[0]);
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("normalizeAudio: invalid loudnorm JSON");
+  const result = LoudnormStatsSchema.safeParse(JSON.parse(match[0]));
+  if (!result.success) {
+    throw new Error(`normalizeAudio: loudnorm JSON missing required fields: ${result.error.issues[0]?.message}`);
   }
-  return parsed as LoudnormStats;
+  return result.data;
 }
