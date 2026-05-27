@@ -57,12 +57,26 @@ export async function copyInStorage(fromPath: string, toPath: string): Promise<v
   if (error) throw new Error(`Storage copy failed [${fromPath} → ${toPath}]: ${error.message}`);
 }
 
+// Recursively lists all files under a storage prefix.
+// Items with id === null and metadata === null are folders — traverse them depth-first.
 export async function listStorageFiles(prefix: string): Promise<string[]> {
   const { data, error } = await supabaseServer.storage
     .from(BUCKET)
     .list(prefix, { limit: 1000 });
   if (error) throw new Error(`Storage list failed [${prefix}]: ${error.message}`);
-  return (data ?? []).map((f) => `${prefix}/${f.name}`);
+
+  const results: string[] = [];
+  for (const item of data ?? []) {
+    const childPath = `${prefix}/${item.name}`;
+    if (item.id === null && item.metadata === null) {
+      // Supabase represents folders as items with no id/metadata — recurse
+      const nested = await listStorageFiles(childPath);
+      results.push(...nested);
+    } else {
+      results.push(childPath);
+    }
+  }
+  return results;
 }
 
 export async function removeFromStorage(paths: string[]): Promise<void> {
