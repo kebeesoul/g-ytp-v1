@@ -26,15 +26,16 @@ export async function downloadFromStorage(path: string): Promise<Buffer> {
 }
 
 // Stream a storage file directly to disk without buffering the whole file in RAM.
-// Uses a raw authenticated fetch so the response body is piped via Node.js streams.
+// Uses a short-lived signed URL so the service role key is never used in raw fetch headers.
 export async function downloadToFile(storagePath: string, localPath: string): Promise<void> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const { data: signed, error: signErr } = await supabaseServer.storage
+    .from(BUCKET)
+    .createSignedUrl(storagePath, 60);
+  if (signErr || !signed) {
+    throw new Error(`Storage signed URL failed [${storagePath}]: ${signErr?.message}`);
+  }
 
-  const res = await fetch(
-    `${supabaseUrl}/storage/v1/object/${BUCKET}/${storagePath}`,
-    { headers: { Authorization: `Bearer ${serviceKey}` } }
-  );
+  const res = await fetch(signed.signedUrl);
   if (!res.ok || !res.body) {
     throw new Error(`Storage stream download failed [${storagePath}]: ${res.status}`);
   }
