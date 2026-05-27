@@ -4,6 +4,17 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { ensureBootCleanup } from "@/lib/render/bootCleanup";
 import { startRenderJob } from "@/lib/render/startRenderJob";
 
+type ProjectRow = Record<string, unknown>;
+
+// Restore a project to its previous state, or delete it if it didn't exist before.
+async function rollbackProject(exportId: string, previousProject: ProjectRow | null): Promise<void> {
+  if (previousProject) {
+    await supabaseServer.from("projects").upsert(previousProject, { onConflict: "id" });
+  } else {
+    await supabaseServer.from("projects").delete().eq("id", exportId);
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
   await ensureBootCleanup();
 
@@ -34,6 +45,13 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  // Save the current project state before overwriting — needed to rollback on failure.
+  const { data: previousProject } = await supabaseServer
+    .from("projects")
+    .select("*")
+    .eq("id", exportId)
+    .maybeSingle();
+
   const jobId = crypto.randomUUID();
 
   const { error: projErr } = await supabaseServer.from("projects").upsert({
@@ -61,7 +79,7 @@ export async function POST(req: Request): Promise<Response> {
     updated_at: new Date().toISOString(),
   });
   if (jobErr) {
-    await supabaseServer.from("projects").delete().eq("id", exportId);
+    await rollbackProject(exportId, previousProject);
     return Response.json(
       { error: `render_jobs insert failed: ${jobErr.message}` },
       { status: 500 }
@@ -74,7 +92,7 @@ export async function POST(req: Request): Promise<Response> {
     .eq("id", exportId);
   if (linkErr) {
     await supabaseServer.from("render_jobs").delete().eq("id", jobId);
-    await supabaseServer.from("projects").delete().eq("id", exportId);
+    await rollbackProject(exportId, previousProject);
     return Response.json(
       { error: `project/job link failed: ${linkErr.message}` },
       { status: 500 }
