@@ -19,13 +19,15 @@ export async function GET(
 
   // 출력 파일 경로 확인 — in-memory 우선, DB fallback
   let outputPath: string | null = null;
+  let projectId: string | null = null;
   const memJob = jobQueue.get(parsed.data);
   if (memJob?.output_path) {
     outputPath = memJob.output_path;
+    projectId = memJob.project_id;
   } else {
     const { data } = await supabaseServer
       .from("render_jobs")
-      .select("output_path, status")
+      .select("output_path, status, project_id")
       .eq("id", parsed.data)
       .single();
     if (!data) {
@@ -35,6 +37,7 @@ export async function GET(
       return Response.json({ error: "render not complete" }, { status: 409 });
     }
     outputPath = data.output_path as string | null;
+    projectId = data.project_id as string | null;
   }
 
   if (!outputPath) {
@@ -56,18 +59,13 @@ export async function GET(
   const ext = outputPath.endsWith(".mov") ? "mov" : "mp4";
   const contentType = ext === "mov" ? "video/quicktime" : "video/mp4";
 
-  // 파일명: projects 테이블에서 title 조회
-  const { data: proj } = await supabaseServer
-    .from("render_jobs")
-    .select("project_id")
-    .eq("id", parsed.data)
-    .single();
+  // 파일명: projects 테이블에서 title 조회 (project_id는 위 쿼리에서 이미 획득)
   let filename = `output.${ext}`;
-  if (proj) {
+  if (projectId) {
     const { data: project } = await supabaseServer
       .from("projects")
       .select("title")
-      .eq("id", proj.project_id)
+      .eq("id", projectId)
       .single();
     if (project?.title) {
       filename = `${(project.title as string).replace(/[/\\?%*:|"<>]/g, "_")}.${ext}`;
