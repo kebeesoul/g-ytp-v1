@@ -1,8 +1,11 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ProjectRecordSchema } from "@/lib/schema";
 import { activeProcesses } from "@/lib/render/processRegistry";
 import { listStorageFiles, removeFromStorage } from "@/lib/supabase/storage";
+import { workspacePaths } from "@/lib/workspace";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -31,7 +34,10 @@ export async function GET(_req: Request, { params }: RouteParams): Promise<Respo
     return Response.json({ error: "schema validation failed" }, { status: 500 });
   }
 
-  return Response.json(record.data);
+  return Response.json({
+    ...record.data,
+    filesAvailable: existsSync(join(workspacePaths.import, exportId)),
+  });
 }
 
 export async function DELETE(_req: Request, { params }: RouteParams): Promise<Response> {
