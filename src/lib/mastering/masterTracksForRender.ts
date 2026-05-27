@@ -10,7 +10,7 @@ export async function masterTracksForRender(
   tracks: Track[],
   workDir: string
 ): Promise<string[]> {
-  const python = process.env.PYTHON_PATH ?? "python3";
+  const python = process.env.PYTHON_BIN ?? "python3";
   const workerPath = join(process.cwd(), "workers", "master_audio.py");
 
   const masteredPaths: string[] = [];
