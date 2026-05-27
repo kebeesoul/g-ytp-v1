@@ -1,3 +1,6 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { z } from "zod";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
