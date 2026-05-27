@@ -50,7 +50,7 @@ const BASE_SNAPSHOT: ProjectSnapshot = {
     kind: "image",
     storagePath: "import/export-id/bg.jpg",
     fit: "cover",
-    dim: 0.25,
+    dim: 0,
     blur: 0,
     cropX: 0.5,
     cropY: 0.5,
@@ -59,8 +59,10 @@ const BASE_SNAPSHOT: ProjectSnapshot = {
   renderConfig: {
     transition: { type: "crossfade", crossfadeSec: 2 },
     overlay: { displayMode: "5", presetId: "default", presetVersion: 1 },
-    audio: { normalize: "ebu_r128", targetLufs: -14, truePeakDb: -1 },
+    audio: { normalize: "ebu_r128", targetLufs: -9, truePeakDb: -0.1 },
     thumbnail: { mode: "extract", presetId: "default", presetVersion: 1 },
+    waveform: { style: "off" },
+    mastering: false,
     outputFormat: "mp4",
     audioBitrateKbps: 192,
     resolution: [1920, 1080],
@@ -125,7 +127,7 @@ describe("§3.2 복원 보장 — 8개 항목 스키마 검증", () => {
   });
 
   it("항목 5: 비디오 배경도 보존된다", () => {
-    const videoBg = { kind: "video" as const, storagePath: "import/export-id/bg.mp4", durationSec: 120, fit: "cover" as const, dim: 0.25, blur: 0, cropY: 0.5 };
+    const videoBg = { kind: "video" as const, storagePath: "import/export-id/bg.mp4", durationSec: 120, fit: "cover" as const, dim: 0, blur: 0, cropY: 0.5 };
     const r = ProjectSnapshotSchema.safeParse({ ...BASE_SNAPSHOT, background: videoBg });
     expect(r.success).toBe(true);
     expect(r.data?.background?.kind).toBe("video");

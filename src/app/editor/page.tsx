@@ -30,6 +30,8 @@ const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
   overlay: { displayMode: "5", presetId: "default", presetVersion: 1 },
   audio: { normalize: "ebu_r128", targetLufs: -14, truePeakDb: -1 },
   thumbnail: { mode: "extract", presetId: "default", presetVersion: 1 },
+  waveform: { style: "off" as const },
+  mastering: false,
   outputFormat: "mp4",
   audioBitrateKbps: 192,
   resolution: [1920, 1080],
