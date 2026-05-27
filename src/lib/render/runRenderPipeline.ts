@@ -1,16 +1,12 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, copyFile } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { supabaseServer } from "@/lib/supabase/server";
-import {
-  downloadToFile,
-  copyInStorage,
-  uploadToStorage,
-} from "@/lib/supabase/storage";
+import { uploadToStorage } from "@/lib/supabase/storage";
 import { concatAndNormalize } from "@/lib/ffmpeg/concatAndNormalize";
 import { renderVideo, preparePngCardSpecs } from "@/lib/ffmpeg/renderVideo";
 import { extractThumbnail } from "@/lib/ffmpeg/thumbnail";
 import { generateTracklistText } from "@/lib/tracklist";
-import { getJobWorkDir, getJobAudioDir, getFinalOutputPath } from "@/lib/workspace";
+import { getJobWorkDir, getFinalOutputPath, resolveStoragePath } from "@/lib/workspace";
 import { activeProcesses, cancelledJobs } from "./processRegistry";
 import { jobQueue } from "./jobQueue";
 import { cleanupIntermediateFiles } from "./cleanupIntermediateFiles";
@@ -89,20 +85,17 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       .eq("id", exportId);
 
     const workDir = getJobWorkDir(jobId);
-    const audioDir = getJobAudioDir(jobId);
-    await mkdir(audioDir, { recursive: true });
+    await mkdir(workDir, { recursive: true });
 
     if (!snapshot.background) throw new Error("background is required");
-    const bgLocalName = basename(snapshot.background.storagePath);
-    const bgLocalPath = join(workDir, bgLocalName);
+    const bgLocalPath = resolveStoragePath(snapshot.background.storagePath);
 
-    // A: Download tracks + background + prepare PNG cards in parallel.
-    // PNG card generation only requires snapshot data (no downloaded files needed).
-    const [audioPaths, , pngCardSpecs] = await Promise.all([
-      downloadTracksParallel(snapshot.tracks, audioDir),
-      downloadToFile(snapshot.background.storagePath, bgLocalPath),
-      preparePngCardSpecs(snapshot, workDir),
-    ]);
+    // A: Resolve track paths from local workspace + prepare PNG cards in parallel.
+    // Files are already on disk from the upload step — no download needed.
+    const audioPaths = snapshot.tracks.map((t) =>
+      resolveStoragePath(t.storagePath)
+    );
+    const pngCardSpecs = await preparePngCardSpecs(snapshot, workDir);
     updateJobQueue(jobId, exportId, "running", 0.05, null, null);
 
     // B: Concat + normalize in one pipeline — no intermediate WAV file
@@ -282,7 +275,7 @@ async function copyImportIfNeeded(
       }
       const filename = basename(track.storagePath);
       const newPath = `${prefix}${filename}`;
-      await copyInStorage(track.storagePath, newPath);
+      await copyFile(resolveStoragePath(track.storagePath), resolveStoragePath(newPath));
       updatedTracks[i] = { ...track, storagePath: newPath };
     }
   }
@@ -294,7 +287,7 @@ async function copyImportIfNeeded(
           const bg = updatedBg!;
           const filename = basename(bg.storagePath);
           const newPath = `${prefix}${filename}`;
-          await copyInStorage(bg.storagePath, newPath);
+          await copyFile(resolveStoragePath(bg.storagePath), resolveStoragePath(newPath));
           updatedBg = { ...bg, storagePath: newPath };
         })()
       : Promise.resolve();
@@ -312,29 +305,3 @@ async function readFileBuffer(filePath: string): Promise<Buffer> {
   return readFile(filePath);
 }
 
-// A: Download up to CONCURRENCY tracks at a time to avoid saturating memory.
-// Order is preserved — audioPaths[i] corresponds to tracks[i].
-const DOWNLOAD_CONCURRENCY = 3;
-
-async function downloadTracksParallel(
-  tracks: Track[],
-  audioDir: string
-): Promise<string[]> {
-  const audioPaths = new Array<string>(tracks.length);
-  let nextIdx = 0;
-
-  async function worker(): Promise<void> {
-    while (nextIdx < tracks.length) {
-      const i = nextIdx++;
-      const track = tracks[i];
-      const localPath = join(audioDir, basename(track.storagePath));
-      await downloadToFile(track.storagePath, localPath);
-      audioPaths[i] = localPath;
-    }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, tracks.length) }, worker)
-  );
-  return audioPaths;
-}
