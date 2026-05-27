@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BackgroundSchema } from "@/lib/schema";
 import type { Background } from "@/lib/schema";
-import { getPublicUrl } from "@/lib/supabase/publicUrl";
 
 interface BackgroundPickerProps {
   editorSessionId: string;
@@ -38,7 +37,7 @@ export function BackgroundPicker({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const publicUrl = getPublicUrl(value.storagePath);
+    const publicUrl = `/api/workspace-file/${value.storagePath}`;
     const cropX = value.cropX ?? 0.5;
     const cropY = value.cropY ?? 0.5;
     const cropW = value.cropW ?? 1.0;
@@ -170,7 +169,7 @@ export function BackgroundPicker({
 
       {showCropEditor && value?.kind === "image" && imgNaturalSize && (
         <CropEditor
-          imageUrl={getPublicUrl(value.storagePath)}
+          imageUrl={`/api/workspace-file/${value.storagePath}`}
           naturalSize={imgNaturalSize}
           initialCropX={value.cropX ?? 0.5}
           initialCropY={value.cropY ?? 0.5}
