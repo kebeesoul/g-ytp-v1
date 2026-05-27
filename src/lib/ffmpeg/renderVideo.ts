@@ -68,7 +68,7 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   } = options;
 
   const { tracks, renderConfig } = snapshot;
-  const { transition, overlay, outputFormat, hwaccel } = renderConfig;
+  const { transition, overlay, waveform, outputFormat, hwaccel } = renderConfig;
   const bg = snapshot.background;
 
   const timings = computeTrackTimings(tracks, transition);
@@ -150,6 +150,13 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     filterScript = buildFilterScript(bg, overlayFilters);
   }
 
+  // Waveform overlay: showwaves converts the audio stream to a video strip
+  // composited at the bottom of the frame. Skipped when style is "off".
+  if (waveform.style !== "off") {
+    filterScript = filterScript.replace("[vout]", "[_prevout]");
+    filterScript += `;\n${buildWaveformFilter(waveform.style, 1)}`;
+  }
+
   const filterScriptPath = join(workDir, "filters.txt");
   await writeFile(filterScriptPath, filterScript, "utf8");
 
@@ -226,6 +233,17 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   return (
     `[0:v]${cropExpr},eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
   );
+}
+
+// Builds a showwaves filter that renders an audio-reactive waveform strip
+// and composites it at the bottom of the previous video label.
+// audioInputIdx is the FFmpeg input index for the audio file (always 1).
+function buildWaveformFilter(style: "line" | "bars", audioInputIdx: number): string {
+  const mode = style === "bars" ? "cbars" : "line";
+  return [
+    `[${audioInputIdx}:a]showwaves=s=1920x120:mode=${mode}:colors=white@0.7:scale=sqrt[_wave]`,
+    `[_prevout][_wave]overlay=0:H-h-24[vout]`,
+  ].join(";\n");
 }
 
 function buildFilterScript(
