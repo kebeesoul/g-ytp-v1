@@ -14,6 +14,7 @@ import { PresetRowSchema, rowToPreset } from "@/lib/presets";
 import { registerPreset } from "@/lib/design/presetRegistry";
 import { ProjectSnapshotSchema, RenderJobRecordSchema } from "@/lib/schema";
 import type { ProjectSnapshot, Track, Background } from "@/lib/schema";
+import { masterTracksForRender } from "@/lib/mastering/masterTracksForRender";
 
 export async function runRenderPipeline(jobId: string): Promise<void> {
   const supabase = supabaseServer;
@@ -92,11 +93,17 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
 
     // A: Resolve track paths from local workspace + prepare PNG cards in parallel.
     // Files are already on disk from the upload step — no download needed.
-    const audioPaths = snapshot.tracks.map((t) =>
+    let audioPaths = snapshot.tracks.map((t) =>
       resolveStoragePath(t.storagePath)
     );
     const pngCardSpecs = await preparePngCardSpecs(snapshot, workDir);
     updateJobQueue(jobId, exportId, "running", 0.05, null, null);
+
+    // Optional: run Python mastering worker before concat.
+    // Mastering handles loudness internally, so normalize is set to "off".
+    if (snapshot.renderConfig.mastering) {
+      audioPaths = await masterTracksForRender(snapshot.tracks, workDir);
+    }
 
     // B: Concat + normalize in one pipeline — no intermediate WAV file
     const concatM4aPath = await concatAndNormalize({
@@ -104,7 +111,9 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       audioPaths,
       transition: snapshot.renderConfig.transition,
       workDir,
-      audioConfig: snapshot.renderConfig.audio,
+      audioConfig: snapshot.renderConfig.mastering
+        ? { ...snapshot.renderConfig.audio, normalize: "off" }
+        : snapshot.renderConfig.audio,
     });
     updateJobQueue(jobId, exportId, "running", 0.15, null, null);
     await flushProgressToDB(jobId, 0.15, null);
