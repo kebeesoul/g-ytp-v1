@@ -49,17 +49,12 @@ export async function DELETE(_req: Request, { params }: RouteParams): Promise<Re
     .eq("project_id", exportId)
     .in("status", ["queued", "running"]);
 
-  if (activeJobs && activeJobs.length > 0) {
+  const hasActiveDbJob = (activeJobs?.length ?? 0) > 0;
+  const hasActiveProcess = (activeJobs ?? []).some((j) => activeProcesses.has(j.id));
+
+  if (hasActiveDbJob || hasActiveProcess) {
     return Response.json(
       { error: "cannot delete project while render is running" },
-      { status: 409 }
-    );
-  }
-
-  const hasActiveProcess = (activeJobs ?? []).some((j) => activeProcesses.has(j.id));
-  if (hasActiveProcess) {
-    return Response.json(
-      { error: "render process still active" },
       { status: 409 }
     );
   }
