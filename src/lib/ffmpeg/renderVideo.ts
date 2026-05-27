@@ -6,7 +6,7 @@ import { resolveOverlayPreset } from "@/lib/design/presetRegistry";
 import { compileOverlayFilters, resolveOverlayTimings } from "./overlayCompiler";
 import {
   generatePngCards,
-  prerenderOverlayTrack,
+  buildPngCardOverlayLines,
   type PngCardSpec,
 } from "./overlayPngRenderer";
 import { parseFFmpegProgress, computeEtaSec } from "./parseProgress";
@@ -132,16 +132,12 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     if (specs.length === 0) {
       filterScript = `${bgFilter};\n[_bgproc]copy[vout]`;
     } else {
-      // Pre-render all N card overlays onto a transparent RGBA track, then
-      // composite once onto the background. Reduces N sequential overlay ops
-      // per frame (slow, CPU-bound) to a single alpha blend (fast).
-      // Input layout after pre-render: 0=bg, 1=audio, 2=overlay.mov
-      const overlayVideoPath = join(workDir, "overlay.mov");
-      const overlayScriptPath = join(workDir, "overlay_filters.txt");
-      await prerenderOverlayTrack(specs, preset, totalAudioSec, overlayVideoPath, overlayScriptPath);
-
-      extraInputs = ["-i", overlayVideoPath];
-      filterScript = `${bgFilter};\n[_bgproc][2:v]overlay=eof_action=pass[vout]`;
+      // Composite PNG cards directly in the main FFmpeg pass.
+      // Input layout: 0=bg, 1=audio, 2..N+1=PNG cards (looped).
+      // Each card is an independent input — no intermediate overlay.mov needed.
+      extraInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
+      const overlayLines = buildPngCardOverlayLines(specs, 2, preset);
+      filterScript = `${bgFilter};\n` + overlayLines.join(";\n");
     }
   } else {
     // drawtext path (or displayMode "0")
