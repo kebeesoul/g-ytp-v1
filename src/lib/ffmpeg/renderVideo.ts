@@ -134,7 +134,6 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     } else {
       // Composite PNG cards directly in the main FFmpeg pass.
       // Input layout: 0=bg, 1=audio, 2..N+1=PNG cards (looped).
-      // Each card is an independent input — no intermediate overlay.mov needed.
       extraInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
       const overlayLines = buildPngCardOverlayLines(specs, 2, preset);
       filterScript = `${bgFilter};\n` + overlayLines.join(";\n");
