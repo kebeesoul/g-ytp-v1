@@ -58,10 +58,12 @@ export const OverlayPresetSchema = z.object({
   }),
 
   color: z.object({
-    artist: z.string().default("#FFFFFF"),
-    title: z.string().default("#FFFFFF"),
-    background: z.string().optional(),
-    shadow: z.string().optional(),
+    // Restrict to valid FFmpeg color formats: #RGB/#RRGGBB/#RRGGBBAA, 0xRRGGBB[AA], or named colors.
+    // Prevents filter graph injection via fontcolor= parameter.
+    artist: z.string().regex(/^(#[0-9A-Fa-f]{3,8}|0x[0-9A-Fa-f]{6,8}|[a-zA-Z]+)$/).default("#FFFFFF"),
+    title: z.string().regex(/^(#[0-9A-Fa-f]{3,8}|0x[0-9A-Fa-f]{6,8}|[a-zA-Z]+)$/).default("#FFFFFF"),
+    background: z.string().regex(/^(#[0-9A-Fa-f]{3,8}|0x[0-9A-Fa-f]{6,8}|[a-zA-Z]+)$/).optional(),
+    shadow: z.string().regex(/^(#[0-9A-Fa-f]{3,8}|0x[0-9A-Fa-f]{6,8}|[a-zA-Z]+)$/).optional(),
   }),
 
   card: z.object({
