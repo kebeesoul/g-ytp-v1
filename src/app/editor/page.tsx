@@ -26,11 +26,11 @@ interface EditorPageProps {
 }
 
 const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
-  transition: { type: "crossfade", crossfadeSec: 2 },
-  overlay: { displayMode: "5", presetId: "default", presetVersion: 1 },
+  transition: { type: "silence", crossfadeSec: 2 },
+  overlay: { displayMode: "0", presetId: "default", presetVersion: 1 },
   audio: { normalize: "ebu_r128", targetLufs: -14, truePeakDb: -1 },
   thumbnail: { mode: "extract", presetId: "default", presetVersion: 1 },
-  waveform: { style: "off" as const },
+  waveform: { style: "off" },
   mastering: false,
   outputFormat: "mp4",
   audioBitrateKbps: 192,
@@ -64,9 +64,10 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [title, setTitle] = useState("");
   const [tracks, setTracks] = useState<Track[]>([]);
   const [background, setBackground] = useState<Background | null>(null);
-  const [transitionType, setTransitionType] = useState<"silence" | "crossfade">("crossfade");
+  const [transitionType, setTransitionType] = useState<"silence" | "crossfade">("silence");
   const [crossfadeSec] = useState(2);
-  const [overlayMode, setOverlayMode] = useState<"0" | "2" | "5" | "full">("5");
+  const [overlayMode, setOverlayMode] = useState<"0" | "2" | "5" | "full">("0");
+  const [waveformStyle, setWaveformStyle] = useState<ProjectSnapshot["renderConfig"]["waveform"]["style"]>("off");
   const [hashtags, setHashtags] = useState<string[]>([]);
   // Separate input state — only synced to hashtags on blur to avoid per-keystroke snapshot updates.
   const [hashtagInput, setHashtagInput] = useState("");
@@ -153,6 +154,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
         setBackground(snapshot.background);
         setTransitionType(snapshot.renderConfig.transition.type);
         setOverlayMode(snapshot.renderConfig.overlay.displayMode);
+        setWaveformStyle(snapshot.renderConfig.waveform.style);
         setOverlayPresetId(snapshot.renderConfig.overlay.presetId);
         setHashtags(snapshot.hashtags);
         setHashtagInput(snapshot.hashtags.join(", "));
@@ -183,6 +185,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
           presetId: overlayPresetId,
           presetVersion: presets.find((p) => p?.id === overlayPresetId)?.version ?? 1,
         },
+        waveform: { style: waveformStyle },
         outputFormat,
       },
       hashtags,
@@ -246,7 +249,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const snapshot = useMemo(
     () => buildSnapshot(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [title, tracks, background, transitionType, crossfadeSec, overlayMode, overlayPresetId, presets, outputFormat, hashtags]
+    [title, tracks, background, transitionType, crossfadeSec, overlayMode, overlayPresetId, presets, outputFormat, hashtags, waveformStyle]
   );
   const snapshotValid = !("error" in snapshot);
 
