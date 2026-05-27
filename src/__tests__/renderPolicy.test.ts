@@ -282,14 +282,14 @@ describe("Download route runtime", () => {
 
 // Layer C: Boot cleanup 싱글톤 구조 검증
 describe("Layer C — Boot cleanup (ensureBootCleanup 싱글톤 구조)", () => {
-  it("bootCleanup.ts에 싱글톤 플래그가 있다", async () => {
+  it("bootCleanup.ts에 Promise memoization 싱글톤이 있다", async () => {
     const code = await readFile(
       new URL("../lib/render/bootCleanup.ts", import.meta.url),
       "utf8"
     );
-    expect(code).toContain("bootCleanupDone");
-    expect(code).toContain("if (bootCleanupDone) return");
-    expect(code).toContain("bootCleanupDone = true");
+    expect(code).toContain("bootCleanupPromise");
+    expect(code).toContain("if (bootCleanupPromise) return bootCleanupPromise");
+    expect(code).toContain("bootCleanupPromise = runBootCleanup()");
   });
 
   it("bootCleanup.ts에서 queued+running 상태를 모두 정리한다", async () => {
