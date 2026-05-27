@@ -203,17 +203,15 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   const cropY = bg?.cropY ?? 0.5;
   const cropW = bg?.cropW ?? 1.0;
 
-  // Crop a cropW-fraction of the original image (16:9 box) centered at (cropX, cropY),
-  // then scale up to 1920×1080. Coefficients are pre-computed so no commas appear inside
-  // FFmpeg expressions (which would conflict with filter option separators).
-  const wCoef = cropW.toFixed(6);
-  const hCoef = (cropW * 9 / 16).toFixed(6);
-  const xCoef = (cropX - cropW / 2).toFixed(6);   // left edge as fraction of in_w
-  const yInH  = cropY.toFixed(6);                  // center-y as fraction of in_h
-  const yInW  = (cropW * 9 / 32).toFixed(6);       // half box-height as fraction of in_w
+  // min() ensures crop never requests dimensions larger than the source.
+  // \, escapes the comma inside the FFmpeg expression evaluator.
+  // (in_w-out_w)/(in_h-out_h) compute the remaining space for centered positioning.
   const cropExpr =
-    `crop=in_w*${wCoef}:in_w*${hCoef}:in_w*${xCoef}:in_h*${yInH}-in_w*${yInW},` +
-    `scale=1920:1080:flags=lanczos`;
+    `crop=min(in_w\\,in_h*16/9)*${cropW.toFixed(6)}` +
+    `:min(in_h\\,in_w*9/16)*${cropW.toFixed(6)}` +
+    `:(in_w-out_w)*${cropX.toFixed(6)}` +
+    `:(in_h-out_h)*${cropY.toFixed(6)}` +
+    `,scale=1920:1080:flags=lanczos`;
 
   if (fit === "blurred_contain") {
     const blurVal = blur > 0 ? blur : 20;
