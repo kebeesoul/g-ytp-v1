@@ -16,6 +16,7 @@ import { jobQueue } from "./jobQueue";
 import { cleanupIntermediateFiles } from "./cleanupIntermediateFiles";
 import { PresetRowSchema, rowToPreset } from "@/lib/presets";
 import { registerPreset } from "@/lib/design/presetRegistry";
+import { ProjectSnapshotSchema, RenderJobRecordSchema } from "@/lib/schema";
 import type { ProjectSnapshot, Track, Background } from "@/lib/schema";
 
 export async function runRenderPipeline(jobId: string): Promise<void> {
@@ -30,7 +31,11 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       .eq("id", jobId)
       .single();
     if (!job) throw new Error(`render_jobs: ${jobId} not found`);
-    exportId = job.project_id as string;
+    const jobParsed = RenderJobRecordSchema.safeParse(job);
+    if (!jobParsed.success) {
+      throw new Error(`render_jobs row invalid: ${jobParsed.error.issues[0]?.message}`);
+    }
+    exportId = jobParsed.data.project_id;
 
     const { data: project } = await supabase
       .from("projects")
@@ -39,7 +44,11 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       .single();
     if (!project) throw new Error(`projects: ${exportId} not found`);
 
-    let snapshot = project.snapshot as ProjectSnapshot;
+    const snapshotParsed = ProjectSnapshotSchema.safeParse(project.snapshot);
+    if (!snapshotParsed.success) {
+      throw new Error(`project snapshot schema invalid: ${snapshotParsed.error.issues[0]?.message}`);
+    }
+    let snapshot = snapshotParsed.data;
 
     // Load user-saved overlay preset from DB into the in-memory registry before rendering.
     // The default preset is already in the registry; skip the DB lookup for it.
