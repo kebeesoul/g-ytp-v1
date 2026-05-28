@@ -117,7 +117,7 @@ export type ThumbnailConfig = z.infer<typeof ThumbnailConfigSchema>;
 
 // ─── 렌더 설정 ───────────────────────────────────────────────────────────────
 export const WaveformConfigSchema = z.object({
-  style: z.enum(["off", "line", "bars"]).default("off"),
+  style: z.enum(["off", "line", "bars"]).catch("off"),
 });
 
 export const RenderConfigSchema = z.object({
@@ -128,7 +128,7 @@ export const RenderConfigSchema = z.object({
   waveform: WaveformConfigSchema.default({ style: "off" }),
   mastering: z.boolean().default(false),
   outputFormat: z.enum(["mp4", "mov"]).default("mp4"),
-  audioBitrateKbps: z.literal(192),
+  audioBitrateKbps: z.literal(192).catch(192),
   resolution: z.tuple([z.literal(1920), z.literal(1080)]),
   hwaccel: z.enum(["videotoolbox", "none"]).default("videotoolbox"),
 });
