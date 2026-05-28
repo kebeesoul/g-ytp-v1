@@ -1,17 +1,6 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "g-ytp-v1",
@@ -24,32 +13,35 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="ko"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-gray-950">
-        <header className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-6 py-3">
-          <span className="text-sm font-semibold text-white">g-ytp-v1</span>
-          <nav className="flex gap-4">
+    <html lang="ko" className="h-full antialiased">
+      <body className="vm-app flex min-h-full flex-col">
+        <header className="vm-topbar">
+          <Link href="/editor" className="vm-brand" aria-label="VIBEMASTER editor">
+            <span className="text-white">VIBE</span><span className="vm-amber">MASTER</span>
+          </Link>
+          <nav className="flex items-center gap-5">
             <Link
               href="/editor"
-              className="text-sm text-gray-300 hover:text-white transition-colors"
+              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
             >
               Editor
             </Link>
             <Link
               href="/history"
-              className="text-sm text-gray-300 hover:text-white transition-colors"
+              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
             >
               History
             </Link>
             <Link
               href="/settings"
-              className="text-sm text-gray-300 hover:text-white transition-colors"
+              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
             >
               Settings
             </Link>
+            <span className="hidden items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-[var(--vm-subtle)] sm:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--vm-cyan)]" />
+              Ready
+            </span>
           </nav>
         </header>
         <main className="flex flex-col flex-1">{children}</main>

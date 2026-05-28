@@ -20,11 +20,17 @@ Merge with project-specific instructions as needed.
 
 ## Project Context
 
-- **Framework:** Next.js 14 App Router
+- **Framework:** Next.js 16 App Router
 - **UI:** shadcn/ui + Tailwind CSS
 - **Database:** Supabase
 - **Package manager:** pnpm
 - **Language:** TypeScript (strict)
+
+## Local Server
+
+- Start the local app with `pnpm start`.
+- Do not use `npm run dev` or `pnpm dev` for this repo unless explicitly requested.
+- If the app has not been built yet, run `pnpm run build` first, then `pnpm start`.
 
 ---
 
@@ -41,7 +47,7 @@ Merge with project-specific instructions as needed.
 
 | Type | Path |
 |---|---|
-| API routes | `src/server/routes/` (not `app/api/`) |
+| API routes | `src/app/api/` |
 | Custom components | `src/components/` |
 | shadcn components | `src/components/ui/` |
 | Custom hooks | `src/hooks/` |
@@ -88,13 +94,12 @@ Merge with project-specific instructions as needed.
 ```
 src/
 ├── app/              # Next.js App Router pages
+│   └── api/          # API routes
 ├── components/
 │   ├── ui/           # shadcn components — do not modify
 │   └── [feature]/    # custom components
 ├── hooks/
 ├── lib/              # utilities, client initialization
-├── server/
-│   └── routes/       # API routes
 └── types/
 ```
 
