@@ -1,8 +1,10 @@
 import { z } from "zod";
+import * as fs from "node:fs/promises";
+import { join, dirname } from "node:path";
 import { parseBuffer } from "music-metadata";
 import { TrackSchema } from "@/lib/schema";
-import { uploadToStorage } from "@/lib/supabase/storage";
 import { ensureBootCleanup } from "@/lib/render/bootCleanup";
+import { workspacePaths } from "@/lib/workspace";
 
 const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "flac", "ogg"]);
 
@@ -95,7 +97,9 @@ export async function POST(req: Request): Promise<Response> {
     const padded = String(i + 1).padStart(3, "0");
     const storagePath = `import/${sessionId.data}/track_${padded}_${trackId}.${ext}`;
 
-    await uploadToStorage(storagePath, buffer, file.type || "audio/mpeg");
+    const localPath = join(workspacePaths.import, sessionId.data, `track_${padded}_${trackId}.${ext}`);
+    await fs.mkdir(dirname(localPath), { recursive: true });
+    await fs.writeFile(localPath, buffer);
 
     const track = TrackSchema.parse({
       id: trackId,

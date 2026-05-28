@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/.pnpm-store/
 /.pnp
 .pnp.*
 .yarn/*
@@ -43,5 +44,14 @@ next-env.d.ts
 
 # workspace (render temp files)
 /workspace/tmp/
+/workspace/import/
+/workspace/export/
+/workspace/thumbnail/
 !/workspace/.gitkeep
 .gstack/
+
+# local generated artifacts
+/output/
+/.playwright-cli/
+/.superpowers/
+/supabase/.temp/

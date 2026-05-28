@@ -6,7 +6,7 @@ import { resolveOverlayPreset } from "@/lib/design/presetRegistry";
 import { compileOverlayFilters, resolveOverlayTimings } from "./overlayCompiler";
 import {
   generatePngCards,
-  prerenderOverlayTrack,
+  buildPngCardOverlayLines,
   type PngCardSpec,
 } from "./overlayPngRenderer";
 import { parseFFmpegProgress, computeEtaSec } from "./parseProgress";
@@ -68,7 +68,7 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   } = options;
 
   const { tracks, renderConfig } = snapshot;
-  const { transition, overlay, outputFormat, hwaccel } = renderConfig;
+  const { transition, overlay, waveform, outputFormat, hwaccel } = renderConfig;
   const bg = snapshot.background;
 
   const timings = computeTrackTimings(tracks, transition);
@@ -132,16 +132,11 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     if (specs.length === 0) {
       filterScript = `${bgFilter};\n[_bgproc]copy[vout]`;
     } else {
-      // Pre-render all N card overlays onto a transparent RGBA track, then
-      // composite once onto the background. Reduces N sequential overlay ops
-      // per frame (slow, CPU-bound) to a single alpha blend (fast).
-      // Input layout after pre-render: 0=bg, 1=audio, 2=overlay.mov
-      const overlayVideoPath = join(workDir, "overlay.mov");
-      const overlayScriptPath = join(workDir, "overlay_filters.txt");
-      await prerenderOverlayTrack(specs, preset, totalAudioSec, overlayVideoPath, overlayScriptPath);
-
-      extraInputs = ["-i", overlayVideoPath];
-      filterScript = `${bgFilter};\n[_bgproc][2:v]overlay=eof_action=pass[vout]`;
+      // Composite PNG cards directly in the main FFmpeg pass.
+      // Input layout: 0=bg, 1=audio, 2..N+1=PNG cards (looped).
+      extraInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
+      const overlayLines = buildPngCardOverlayLines(specs, 2, preset);
+      filterScript = `${bgFilter};\n` + overlayLines.join(";\n");
     }
   } else {
     // drawtext path (or displayMode "0")
@@ -152,6 +147,13 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       preset
     );
     filterScript = buildFilterScript(bg, overlayFilters);
+  }
+
+  // Waveform overlay: showwaves converts the audio stream to a video strip
+  // composited at the bottom of the frame. Skipped when style is "off".
+  if (waveform.style !== "off") {
+    filterScript = filterScript.replace("[vout]", "[_prevout]");
+    filterScript += `;\n${buildWaveformFilter(waveform.style, 1)}`;
   }
 
   const filterScriptPath = join(workDir, "filters.txt");
@@ -207,17 +209,15 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   const cropY = bg?.cropY ?? 0.5;
   const cropW = bg?.cropW ?? 1.0;
 
-  // Crop a cropW-fraction of the original image (16:9 box) centered at (cropX, cropY),
-  // then scale up to 1920×1080. Coefficients are pre-computed so no commas appear inside
-  // FFmpeg expressions (which would conflict with filter option separators).
-  const wCoef = cropW.toFixed(6);
-  const hCoef = (cropW * 9 / 16).toFixed(6);
-  const xCoef = (cropX - cropW / 2).toFixed(6);   // left edge as fraction of in_w
-  const yInH  = cropY.toFixed(6);                  // center-y as fraction of in_h
-  const yInW  = (cropW * 9 / 32).toFixed(6);       // half box-height as fraction of in_w
+  // min() ensures crop never requests dimensions larger than the source.
+  // \, escapes the comma inside the FFmpeg expression evaluator.
+  // (in_w-out_w)/(in_h-out_h) compute the remaining space for centered positioning.
   const cropExpr =
-    `crop=in_w*${wCoef}:in_w*${hCoef}:in_w*${xCoef}:in_h*${yInH}-in_w*${yInW},` +
-    `scale=1920:1080:flags=lanczos`;
+    `crop=min(in_w\\,in_h*16/9)*${cropW.toFixed(6)}` +
+    `:min(in_h\\,in_w*9/16)*${cropW.toFixed(6)}` +
+    `:(in_w-out_w)*${cropX.toFixed(6)}` +
+    `:(in_h-out_h)*${cropY.toFixed(6)}` +
+    `,scale=1920:1080:flags=lanczos`;
 
   if (fit === "blurred_contain") {
     const blurVal = blur > 0 ? blur : 20;
@@ -232,6 +232,17 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   return (
     `[0:v]${cropExpr},eq=brightness=${(-dim).toFixed(3)}[_bgproc]`
   );
+}
+
+// Builds a showwaves filter that renders an audio-reactive waveform strip
+// and composites it at the bottom of the previous video label.
+// audioInputIdx is the FFmpeg input index for the audio file (always 1).
+function buildWaveformFilter(style: "line" | "bars", audioInputIdx: number): string {
+  const mode = style === "bars" ? "cbars" : "line";
+  return [
+    `[${audioInputIdx}:a]showwaves=s=1920x120:mode=${mode}:colors=white@0.7:scale=sqrt[_wave]`,
+    `[_prevout][_wave]overlay=0:H-h-24[vout]`,
+  ].join(";\n");
 }
 
 function buildFilterScript(

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
 
@@ -10,6 +11,13 @@ interface ProbeResult {
   format: string;
 }
 
+const FfprobeOutputSchema = z.object({
+  format: z.object({
+    duration: z.string().transform((v) => Number(v)),
+    format_name: z.string().optional(),
+  }),
+});
+
 export async function probeMediaFile(filePath: string): Promise<ProbeResult> {
   const { stdout } = await execFileAsync(FFPROBE, [
     "-v", "quiet",
@@ -18,25 +26,19 @@ export async function probeMediaFile(filePath: string): Promise<ProbeResult> {
     filePath,
   ]);
 
-  const parsed: unknown = JSON.parse(stdout);
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !("format" in parsed) ||
-    typeof (parsed as Record<string, unknown>).format !== "object"
-  ) {
+  const result = FfprobeOutputSchema.safeParse(JSON.parse(stdout));
+  if (!result.success) {
     throw new Error(`ffprobe returned unexpected output for: ${filePath}`);
   }
 
-  const fmt = (parsed as { format: Record<string, unknown> }).format;
-  const duration = Number(fmt["duration"]);
+  const { duration, format_name } = result.data.format;
   if (!Number.isFinite(duration) || duration <= 0) {
     throw new Error(`Could not extract valid duration from: ${filePath}`);
   }
 
   return {
     durationSec: duration,
-    format: String(fmt["format_name"] ?? "unknown"),
+    format: format_name ?? "unknown",
   };
 }
 

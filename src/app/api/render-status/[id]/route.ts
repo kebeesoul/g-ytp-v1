@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RenderJobRecordSchema } from "@/lib/schema";
+import { RenderJobRecordSchema, type RenderJobRecord } from "@/lib/schema";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ensureBootCleanup } from "@/lib/render/bootCleanup";
 import { jobQueue } from "@/lib/render/jobQueue";
@@ -32,8 +32,13 @@ export async function GET(
     return Response.json({ error: "not found" }, { status: 404 });
   }
 
+  const verified = RenderJobRecordSchema.safeParse(data);
+  if (!verified.success) {
+    return Response.json({ error: "invalid record" }, { status: 500 });
+  }
+
   // Layer 2 좀비 감지: DB='running'이지만 in-memory 없음 = 서버 재시작 (§9.2)
-  if (data.status === "running") {
+  if (verified.data.status === "running") {
     const now = new Date().toISOString();
     await supabaseServer
       .from("render_jobs")
@@ -46,15 +51,11 @@ export async function GET(
       .eq("id", jobId);
 
     return Response.json({
-      ...data,
+      ...verified.data,
       status: "error",
       error_msg: "server restarted during render",
-    });
+    } satisfies RenderJobRecord);
   }
 
-  const verified = RenderJobRecordSchema.safeParse(data);
-  if (!verified.success) {
-    return Response.json({ error: "invalid record" }, { status: 500 });
-  }
   return Response.json(verified.data);
 }

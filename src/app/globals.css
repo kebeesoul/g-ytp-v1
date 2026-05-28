@@ -1,8 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #030303;
+  --foreground: #e7e7e7;
+  --vm-bg: #030303;
+  --vm-panel: #101010;
+  --vm-panel-raised: #151515;
+  --vm-border: #232323;
+  --vm-border-strong: #333333;
+  --vm-text: #e7e7e7;
+  --vm-subtle: #8a8a8a;
+  --vm-muted: #5f5f5f;
+  --vm-cyan: #00d6c8;
+  --vm-amber: #ffb000;
+  --vm-error: #ff5c5c;
+  --font-geist-sans: Arial, Helvetica, sans-serif;
+  --font-geist-mono: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @theme inline {
@@ -12,20 +25,192 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 html {
   /* Reserve scrollbar gutter to prevent layout shift when scrollbar appears/disappears */
   scrollbar-gutter: stable;
+  background: var(--vm-bg);
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-mono), SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  height: 100%;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(0, 214, 200, 0.35);
+  color: #ffffff;
+}
+
+.vm-app {
+  height: 100%;
+  background: var(--vm-bg);
+  color: var(--vm-text);
+  overflow: hidden;
+}
+
+.vm-topbar {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--vm-border);
+  background: #030303;
+  padding: 0 18px;
+}
+
+.vm-brand {
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.vm-shell {
+  display: grid;
+  height: calc(100vh - 58px);
+  grid-template-columns: 430px minmax(0, 1fr);
+  background: var(--vm-bg);
+  overflow: hidden;
+}
+
+.vm-rail {
+  border-right: 1px solid var(--vm-border);
+  padding: 20px 14px;
+}
+
+.vm-main {
+  min-height: 0;
+  overflow: hidden;
+  padding: 20px;
+}
+
+.vm-panel {
+  border: 1px solid var(--vm-border);
+  border-radius: 6px;
+  background: var(--vm-panel);
+}
+
+.vm-panel-pad {
+  padding: 16px;
+}
+
+.vm-label {
+  color: var(--vm-muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.vm-value {
+  color: var(--vm-text);
+  font-size: 12px;
+}
+
+.vm-muted {
+  color: var(--vm-muted);
+}
+
+.vm-cyan {
+  color: var(--vm-cyan);
+}
+
+.vm-amber {
+  color: var(--vm-amber);
+}
+
+.vm-input {
+  width: 100%;
+  border: 1px solid #2a2a2a;
+  border-radius: 5px;
+  background: #0b0b0b;
+  padding: 9px 10px;
+  color: var(--vm-text);
+  font-size: 12px;
+  outline: none;
+}
+
+.vm-input::placeholder {
+  color: var(--vm-muted);
+}
+
+.vm-input:focus {
+  border-color: var(--vm-cyan);
+  box-shadow: 0 0 0 1px rgba(0, 214, 200, 0.45);
+}
+
+.vm-button-primary {
+  border-radius: 5px;
+  background: var(--vm-amber);
+  padding: 13px 16px;
+  color: #050505;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transition: filter 120ms ease, opacity 120ms ease;
+}
+
+.vm-button-primary:hover {
+  filter: brightness(1.08);
+}
+
+.vm-button-secondary {
+  border: 1px solid var(--vm-border);
+  border-radius: 5px;
+  background: #101010;
+  padding: 10px 12px;
+  color: var(--vm-text);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.vm-button-secondary:hover {
+  border-color: var(--vm-border-strong);
+  color: #ffffff;
+}
+
+.vm-button-danger {
+  border: 1px solid #5a2a2a;
+  color: var(--vm-error);
+}
+
+.vm-dropzone {
+  border: 1px dashed var(--vm-cyan);
+  border-radius: 6px;
+  background: #070707;
+  color: var(--vm-cyan);
+}
+
+.vm-divider {
+  border-top: 1px solid var(--vm-border);
+}
+
+@media (max-width: 900px) {
+  .vm-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .vm-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--vm-border);
+  }
+
+  .vm-main {
+    padding: 14px;
+  }
 }

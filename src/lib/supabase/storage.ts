@@ -26,15 +26,16 @@ export async function downloadFromStorage(path: string): Promise<Buffer> {
 }
 
 // Stream a storage file directly to disk without buffering the whole file in RAM.
-// Uses a raw authenticated fetch so the response body is piped via Node.js streams.
+// Uses a short-lived signed URL so the service role key is never used in raw fetch headers.
 export async function downloadToFile(storagePath: string, localPath: string): Promise<void> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const { data: signed, error: signErr } = await supabaseServer.storage
+    .from(BUCKET)
+    .createSignedUrl(storagePath, 60);
+  if (signErr || !signed) {
+    throw new Error(`Storage signed URL failed [${storagePath}]: ${signErr?.message}`);
+  }
 
-  const res = await fetch(
-    `${supabaseUrl}/storage/v1/object/${BUCKET}/${storagePath}`,
-    { headers: { Authorization: `Bearer ${serviceKey}` } }
-  );
+  const res = await fetch(signed.signedUrl);
   if (!res.ok || !res.body) {
     throw new Error(`Storage stream download failed [${storagePath}]: ${res.status}`);
   }
@@ -56,12 +57,26 @@ export async function copyInStorage(fromPath: string, toPath: string): Promise<v
   if (error) throw new Error(`Storage copy failed [${fromPath} → ${toPath}]: ${error.message}`);
 }
 
+// Recursively lists all files under a storage prefix.
+// Items with id === null and metadata === null are folders — traverse them depth-first.
 export async function listStorageFiles(prefix: string): Promise<string[]> {
   const { data, error } = await supabaseServer.storage
     .from(BUCKET)
     .list(prefix, { limit: 1000 });
   if (error) throw new Error(`Storage list failed [${prefix}]: ${error.message}`);
-  return (data ?? []).map((f) => `${prefix}/${f.name}`);
+
+  const results: string[] = [];
+  for (const item of data ?? []) {
+    const childPath = `${prefix}/${item.name}`;
+    if (item.id === null && item.metadata === null) {
+      // Supabase represents folders as items with no id/metadata — recurse
+      const nested = await listStorageFiles(childPath);
+      results.push(...nested);
+    } else {
+      results.push(childPath);
+    }
+  }
+  return results;
 }
 
 export async function removeFromStorage(paths: string[]): Promise<void> {

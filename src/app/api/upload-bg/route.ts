@@ -1,12 +1,11 @@
 import { z } from "zod";
+import * as fs from "node:fs/promises";
+import { join, dirname } from "node:path";
 import { BackgroundSchema } from "@/lib/schema";
-import { uploadToStorage } from "@/lib/supabase/storage";
 import { probeMediaFile } from "@/lib/ffmpeg/probe";
 import { ensureBootCleanup } from "@/lib/render/bootCleanup";
 import { applyBgDefaults } from "@/lib/backgroundDefaults";
-import { writeFile, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { workspacePaths } from "@/lib/workspace";
 
 const IMAGE_MIMES = new Set([
   "image/jpeg",
@@ -55,20 +54,17 @@ export async function POST(req: Request): Promise<Response> {
   const ext = file.name.split(".").pop() ?? (kind === "image" ? "jpg" : "mp4");
   const storagePath = `import/${sessionId.data}/bg.${ext}`;
 
-  await uploadToStorage(storagePath, buffer, mimeType);
+  // Save directly to workspace — no Supabase Storage round-trip needed
+  const localPath = join(workspacePaths.import, sessionId.data, `bg.${ext}`);
+  await fs.mkdir(dirname(localPath), { recursive: true });
+  await fs.writeFile(localPath, buffer);
 
   let durationSec: number | undefined;
 
   if (kind === "video") {
-    // ffprobe로 영상 길이 측정 — 임시 파일 경유
-    const tmpPath = join(tmpdir(), `bg_${crypto.randomUUID()}.${ext}`);
-    try {
-      await writeFile(tmpPath, buffer);
-      const probe = await probeMediaFile(tmpPath);
-      durationSec = probe.durationSec;
-    } finally {
-      await unlink(tmpPath).catch(() => undefined);
-    }
+    // ffprobe로 영상 길이 측정 — workspace 파일 직접 사용 (임시 파일 불필요)
+    const probe = await probeMediaFile(localPath);
+    durationSec = probe.durationSec;
   }
 
   const background = BackgroundSchema.parse(

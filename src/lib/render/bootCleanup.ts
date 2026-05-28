@@ -1,12 +1,15 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import { registerShutdownHandler } from "./gracefulShutdown";
 
-let bootCleanupDone = false;
+let bootCleanupPromise: Promise<void> | null = null;
 
-export async function ensureBootCleanup(): Promise<void> {
-  if (bootCleanupDone) return;
-  bootCleanupDone = true;
+export function ensureBootCleanup(): Promise<void> {
+  if (bootCleanupPromise) return bootCleanupPromise;
+  bootCleanupPromise = runBootCleanup();
+  return bootCleanupPromise;
+}
 
+async function runBootCleanup(): Promise<void> {
   registerShutdownHandler(); // Layer F — 부팅 시 1회 등록
 
   const { data: zombies } = await supabaseServer

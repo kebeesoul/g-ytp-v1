@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
-import { getPublicUrl } from "@/lib/supabase/publicUrl";
 
 interface AudioPlayerProps {
   storagePath: string | null;
@@ -25,7 +24,7 @@ export function AudioPlayer({ storagePath, trackId }: AudioPlayerProps) {
     setPlaying(false);
     setCurrentTime(0);
 
-    const url = getPublicUrl(storagePath);
+    const url = `/api/workspace-file/${storagePath}`;
 
     const ws = WaveSurfer.create({
       container: containerRef.current,

@@ -1,6 +1,9 @@
+import { existsSync } from "node:fs";
 import { z } from "zod";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ProjectRecordSchema } from "@/lib/schema";
+import { workspacePaths } from "@/lib/workspace";
+import { join } from "node:path";
 
 export async function GET(): Promise<Response> {
   const { data, error } = await supabaseServer
@@ -18,5 +21,10 @@ export async function GET(): Promise<Response> {
     return Response.json({ error: "schema validation failed" }, { status: 500 });
   }
 
-  return Response.json(parsed.data);
+  const records = parsed.data.map((record) => ({
+    ...record,
+    filesAvailable: existsSync(join(workspacePaths.import, record.id)),
+  }));
+
+  return Response.json(records);
 }
