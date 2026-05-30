@@ -3,7 +3,7 @@ import { GEMINI_MODEL, hasGeminiApiKey, cleanGeminiJsonText } from "@/lib/gemini
 import { buildHashtagPrompt } from "@/lib/hashtagRecommend/buildPrompt";
 
 const BodySchema = z.object({
-  description: z.string().min(1),
+  title: z.string().min(1),
 });
 
 export async function POST(req: Request): Promise<Response> {
@@ -17,7 +17,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: body.error.issues[0]?.message ?? "invalid body" }, { status: 400 });
   }
 
-  const prompt = buildHashtagPrompt(body.data.description);
+  const prompt = buildHashtagPrompt(body.data.title);
 
   const geminiRes = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
