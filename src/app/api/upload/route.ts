@@ -121,5 +121,10 @@ export async function POST(req: Request): Promise<Response> {
     tracks.push(track);
   }
 
-  return Response.json(tracks);
+  return Response.json(tracks, {
+    headers: {
+      // Grants the browser access to this session's workspace files.
+      "Set-Cookie": `ws-session-${sessionId.data}=1; HttpOnly; SameSite=Strict; Path=/api/workspace-file; Max-Age=86400`,
+    },
+  });
 }
