@@ -33,6 +33,22 @@ html {
   overflow: hidden;
 }
 
+/* Dark-themed scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--vm-border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vm-subtle);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

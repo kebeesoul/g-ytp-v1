@@ -31,6 +31,9 @@ export function BackgroundPicker({
     const canvas = canvasRef.current;
     if (!canvas || !value) {
       setImgNaturalSize(null);
+      // Clear canvas when image is removed
+      const ctx = canvas?.getContext("2d");
+      if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
 
@@ -110,8 +113,8 @@ export function BackgroundPicker({
       <div className="relative overflow-hidden rounded-md border border-gray-700 bg-gray-900">
         <canvas
           ref={canvasRef}
-          width={320}
-          height={180}
+          width={1280}
+          height={720}
           className="w-full"
         />
         {!value && (
