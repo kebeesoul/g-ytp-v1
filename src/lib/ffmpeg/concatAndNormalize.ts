@@ -1,6 +1,10 @@
+import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { z } from "zod";
 import type { AudioConfig, TransitionConfig } from "@/lib/schema";
+import { activeProcesses } from "@/lib/render/processRegistry";
 import { runFfmpeg } from "./runFfmpeg";
+import { resolveFfmpegPath } from "./resolveFfmpeg";
 
 export interface ConcatAndNormalizeOptions {
   jobId?: string;
@@ -8,10 +12,16 @@ export interface ConcatAndNormalizeOptions {
   transition: TransitionConfig;
   workDir: string;
   audioConfig: AudioConfig;
-  mastering?: boolean;
 }
 
-const AUDIO_BITRATE = "192k";
+const LoudnormStatsSchema = z.object({
+  input_i: z.string(),
+  input_tp: z.string(),
+  input_lra: z.string(),
+  input_thresh: z.string(),
+  target_offset: z.string(),
+});
+type LoudnormStats = z.infer<typeof LoudnormStatsSchema>;
 
 // Returns the filter_complex lines for audio concat and the output stream label.
 // Single-track case needs no filter — returns empty filterLines and "0:a" as direct input.
@@ -53,53 +63,10 @@ function buildFilterComplex(
 export async function concatAndNormalize(
   options: ConcatAndNormalizeOptions
 ): Promise<string> {
-  const { jobId, audioPaths, transition, workDir, audioConfig, mastering } = options;
+  const { jobId, audioPaths, transition, workDir, audioConfig } = options;
   if (audioPaths.length === 0) throw new Error("concatAndNormalize: no audio files");
 
   const outputPath = join(workDir, "concat.m4a");
-
-  // Mastering: normalize each track individually, then concat without another normalize pass.
-  if (mastering && audioConfig.normalize !== "off") {
-    const { targetLufs, truePeakDb } = audioConfig;
-    const lra = 11;
-    const loudnormFilter = `loudnorm=I=${targetLufs}:TP=${truePeakDb}:LRA=${lra}`;
-    const masteredPaths = await Promise.all(
-      audioPaths.map(async (p, i) => {
-        const out = join(workDir, `mastered_${i}.m4a`);
-        await runFfmpeg({
-          jobId,
-          args: [
-            "-y", "-i", p,
-            "-af", loudnormFilter,
-            "-c:a", "aac",
-            "-ar", "48000",
-            "-b:a", AUDIO_BITRATE,
-            out,
-          ],
-        });
-        return out;
-      })
-    );
-    const masteredInputs = masteredPaths.flatMap((p) => ["-i", p]);
-    const { filterLines: mfl, outLabel: mol } = buildConcatFilter(masteredPaths.length, transition);
-    const hasMasteredConcat = !!mfl;
-    await runFfmpeg({
-      jobId,
-      args: [
-        "-y",
-        ...masteredInputs,
-        ...(hasMasteredConcat
-          ? ["-filter_complex", mfl, "-map", `[${mol}]`]
-          : ["-map", "0:a"]),
-        "-c:a", "aac",
-        "-ar", "48000",
-        "-b:a", AUDIO_BITRATE,
-        outputPath,
-      ],
-    });
-    return outputPath;
-  }
-
   const inputs = audioPaths.flatMap((p) => ["-i", p]);
   const { filterLines, outLabel } = buildConcatFilter(audioPaths.length, transition);
   const hasConcat = !!filterLines;
@@ -114,8 +81,7 @@ export async function concatAndNormalize(
           ? ["-filter_complex", filterLines, "-map", `[${outLabel}]`]
           : ["-map", "0:a"]),
         "-c:a", "aac",
-        "-ar", "48000",
-        "-b:a", AUDIO_BITRATE,
+        "-b:a", "192k",
         outputPath,
       ],
     });
@@ -126,8 +92,10 @@ export async function concatAndNormalize(
   const lra = 11;
   const loudnormBase = `loudnorm=I=${targetLufs}:TP=${truePeakDb}:LRA=${lra}`;
 
-  if (audioConfig.normalize === "ebu_r128" || audioConfig.normalize === "ebu_r128_fast") {
-    const fastFilter = buildFilterComplex(filterLines, outLabel, `${loudnormBase}:linear=true`);
+  if (audioConfig.normalize === "ebu_r128_fast") {
+    // Single-pass loudnorm: no measurement pass. ~50% faster on long mixes.
+    // EBU R128 target is still met; integrated measurement is less precise than two-pass.
+    const fastFilter = buildFilterComplex(filterLines, outLabel, loudnormBase);
     await runFfmpeg({
       jobId,
       args: [
@@ -136,13 +104,83 @@ export async function concatAndNormalize(
         "-filter_complex", fastFilter,
         "-map", "[aout]",
         "-c:a", "aac",
-        "-ar", "48000",
-        "-b:a", AUDIO_BITRATE,
+        "-b:a", "192k",
         outputPath,
       ],
     });
     return outputPath;
   }
 
-  throw new Error(`unsupported normalize mode: ${audioConfig.normalize}`);
+  // Two-pass EBU R128 loudnorm — no WAV intermediate
+  // Pass 1: measure loudness (output discarded)
+  const pass1Filter = buildFilterComplex(filterLines, outLabel, `${loudnormBase}:print_format=json`);
+  const pass1Stderr = await captureLoudnormStats(jobId, inputs, pass1Filter);
+  const stats = parseLoudnormJson(pass1Stderr);
+
+  // Pass 2: apply measured normalization
+  const filterPass2 = [
+    loudnormBase,
+    `measured_I=${stats.input_i}`,
+    `measured_TP=${stats.input_tp}`,
+    `measured_LRA=${stats.input_lra}`,
+    `measured_thresh=${stats.input_thresh}`,
+    `offset=${stats.target_offset}`,
+    "linear=true",
+  ].join(":");
+
+  const pass2Filter = buildFilterComplex(filterLines, outLabel, filterPass2);
+  await runFfmpeg({
+    jobId,
+    args: [
+      "-y",
+      ...inputs,
+      "-filter_complex", pass2Filter,
+      "-map", "[aout]",
+      "-c:a", "aac",
+      "-b:a", "192k",
+      outputPath,
+    ],
+  });
+
+  return outputPath;
+}
+
+// Runs FFmpeg with filter_complex → /dev/null and returns stderr (where loudnorm JSON lives).
+function captureLoudnormStats(
+  jobId: string | undefined,
+  inputs: string[],
+  filterComplex: string
+): Promise<string> {
+  const ffmpeg = resolveFfmpegPath();
+  return new Promise<string>((resolve, reject) => {
+    const proc = spawn(
+      ffmpeg,
+      ["-y", ...inputs, "-filter_complex", filterComplex, "-map", "[aout]", "-f", "null", "-"],
+      { stdio: ["ignore", "ignore", "pipe"] }
+    );
+
+    if (jobId) activeProcesses.set(jobId, proc);
+    let stderr = "";
+    proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    proc.on("close", (code) => {
+      if (jobId) activeProcesses.delete(jobId);
+      if (code === 0) resolve(stderr);
+      else reject(new Error(`loudnorm analysis failed (code ${code}):\n${stderr.slice(-2000)}`));
+    });
+    proc.on("error", (err) => {
+      if (jobId) activeProcesses.delete(jobId);
+      reject(err);
+    });
+  });
+}
+
+function parseLoudnormJson(stderr: string): LoudnormStats {
+  const match = stderr.match(/\{[\s\S]*?\}/);
+  if (!match) throw new Error("concatAndNormalize: loudnorm JSON not found in ffmpeg output");
+  const result = LoudnormStatsSchema.safeParse(JSON.parse(match[0]));
+  if (!result.success) {
+    throw new Error(`concatAndNormalize: loudnorm JSON missing required fields: ${result.error.issues[0]?.message}`);
+  }
+  return result.data;
 }

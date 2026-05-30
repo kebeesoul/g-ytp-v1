@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
+import { resolveFfmpegPath } from "./resolveFfmpeg";
 
 const execFileAsync = promisify(execFile);
 
@@ -43,7 +44,7 @@ export async function probeMediaFile(filePath: string): Promise<ProbeResult> {
 }
 
 export async function checkFFmpegAvailable(): Promise<void> {
-  const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
+  const ffmpeg = resolveFfmpegPath();
   try {
     await execFileAsync(ffmpeg, ["-version"]);
   } catch {

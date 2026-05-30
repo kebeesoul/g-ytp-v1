@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AudioConfig } from "@/lib/schema";
 import { registerProcess, unregisterProcess } from "@/lib/render/processRegistry";
 import { runFfmpeg } from "./runFfmpeg";
+import { resolveFfmpegPath } from "./resolveFfmpeg";
 
 export interface NormalizeAudioOptions {
   jobId?: string;
@@ -75,7 +76,7 @@ function captureLoudnormStats(
   inputPath: string,
   loudnormBase: string
 ): Promise<string> {
-  const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
+  const ffmpeg = resolveFfmpegPath();
 
   return new Promise<string>((resolve, reject) => {
     const proc = spawn(ffmpeg, [

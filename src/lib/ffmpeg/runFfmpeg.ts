@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { registerProcess, unregisterProcess } from "@/lib/render/processRegistry";
+import { activeProcesses } from "@/lib/render/processRegistry";
+import { resolveFfmpegPath } from "./resolveFfmpeg";
 
-const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
+const FFMPEG = resolveFfmpegPath();
 
 export interface RunFfmpegOptions {
   jobId?: string;
@@ -15,7 +16,7 @@ export function runFfmpeg(options: RunFfmpegOptions): Promise<void> {
 
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
-    registerProcess(jobId, proc);
+    if (jobId) activeProcesses.set(jobId, proc);
 
     let stderrBuf = "";
     // Cap stderr buffer to prevent unbounded memory growth during long renders
@@ -33,7 +34,7 @@ export function runFfmpeg(options: RunFfmpegOptions): Promise<void> {
     });
 
     proc.on("close", (code) => {
-      unregisterProcess(jobId, proc);
+      if (jobId) activeProcesses.delete(jobId);
       if (code === 0) {
         resolve();
         return;
@@ -45,7 +46,7 @@ export function runFfmpeg(options: RunFfmpegOptions): Promise<void> {
     });
 
     proc.on("error", (err) => {
-      unregisterProcess(jobId, proc);
+      if (jobId) activeProcesses.delete(jobId);
       reject(err);
     });
   });
