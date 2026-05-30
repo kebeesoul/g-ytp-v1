@@ -123,8 +123,9 @@ export function BackgroundPicker({
           className="w-full"
         />
         {!value && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-600">
-            {uploading ? "업로드 중..." : "클릭 또는 드래그"}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+            <span className="text-xs text-gray-500">{uploading ? "업로드 중..." : "이미지 / 영상"}</span>
+            {!uploading && <span className="text-xs text-gray-600">클릭 또는 드래그</span>}
           </div>
         )}
       </div>
