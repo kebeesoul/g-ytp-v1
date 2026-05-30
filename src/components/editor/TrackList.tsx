@@ -23,6 +23,7 @@ const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "flac", "ogg"]);
 
 interface TrackListProps {
   tracks: Track[];
+  activeTrackId: string | null;
   onReorder: (tracks: Track[]) => void;
   onEdit: (id: string, artist: string, title: string) => void;
   onDelete: (id: string) => void;
@@ -38,6 +39,7 @@ function isAudioFile(file: File): boolean {
 
 export function TrackList({
   tracks,
+  activeTrackId,
   onReorder,
   onEdit,
   onDelete,
@@ -126,17 +128,23 @@ export function TrackList({
   }
 
   const dropzoneLabel = isUploading
-    ? "음원 ingest 중..."
+    ? "Ingesting..."
     : isDraggingFiles
-      ? "여기에 음원 파일 놓기"
-      : "+ 음원 추가 (클릭 또는 드래그)";
+      ? "Drop audio"
+      : "+ Audio files";
 
   const dropzoneClass = isDraggingFiles
-    ? "border-blue-400 bg-blue-500/10 text-blue-200"
-    : "border-gray-600 text-gray-500 hover:border-gray-400 hover:text-gray-300";
+    ? "border-[var(--vm-cyan)] bg-[rgba(0,214,200,0.08)] text-[var(--vm-cyan)]"
+    : "border-[var(--vm-border)] text-[var(--vm-muted)] hover:border-[var(--vm-cyan)] hover:text-[var(--vm-cyan)]";
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="vm-label">Source Tracks</span>
+        <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--vm-muted)]">
+          {String(tracks.length).padStart(2, "0")} files
+        </span>
+      </div>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -146,12 +154,13 @@ export function TrackList({
           items={tracks.map((t) => t.id)}
           strategy={verticalListSortingStrategy}
         >
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             {tracks.map((track, index) => (
               <TrackItem
                 key={track.id}
                 track={track}
                 index={index}
+                active={track.id === activeTrackId}
                 onEdit={onEdit}
                 onDelete={onDelete}
                 onPlay={onPlay}
@@ -171,7 +180,7 @@ export function TrackList({
           if (!isUploading) fileInputRef.current?.click();
         }}
         disabled={isUploading}
-        className={`flex cursor-pointer items-center justify-center rounded-md border-2 border-dashed py-4 text-sm transition disabled:cursor-wait disabled:opacity-70 ${dropzoneClass}`}
+        className={`flex cursor-pointer items-center justify-center rounded-[5px] border border-dashed py-4 text-xs uppercase tracking-[0.12em] transition disabled:cursor-wait disabled:opacity-70 ${dropzoneClass}`}
       >
         {dropzoneLabel}
       </button>
@@ -186,7 +195,7 @@ export function TrackList({
           e.target.value = "";
         }}
       />
-      {dropError && <p className="text-xs text-red-400">{dropError}</p>}
+      {dropError && <p className="text-xs text-[var(--vm-error)]">{dropError}</p>}
     </div>
   );
 }

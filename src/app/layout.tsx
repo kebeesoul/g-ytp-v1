@@ -16,8 +16,9 @@ export default function RootLayout({
     <html lang="ko" className="h-full antialiased">
       <body className="vm-app flex min-h-full flex-col">
         <header className="vm-topbar">
-          <Link href="/editor" className="vm-brand" aria-label="VIBEMASTER editor">
-            <span className="text-white">VIBE</span><span className="vm-amber">MASTER</span>
+          <Link href="/editor" className="vm-brand" aria-label="YTP MAKER editor">
+            <span className="text-white">YTP MAKER</span>
+            <span className="text-[var(--vm-muted)]"> | published by galaxymap</span>
           </Link>
           <nav className="flex items-center gap-5">
             <Link
@@ -31,6 +32,12 @@ export default function RootLayout({
               className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
             >
               History
+            </Link>
+            <Link
+              href="/thumbnail"
+              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
+            >
+              Thumbnail
             </Link>
             <Link
               href="/settings"

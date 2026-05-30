@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { z } from "zod";
 import type { AudioConfig, TransitionConfig } from "@/lib/schema";
 import { activeProcesses } from "@/lib/render/processRegistry";
 import { runFfmpeg } from "./runFfmpeg";
@@ -11,16 +10,17 @@ export interface ConcatAndNormalizeOptions {
   transition: TransitionConfig;
   workDir: string;
   audioConfig: AudioConfig;
+  playlistRepeatCount?: number;
+  mastering?: boolean;
 }
 
-const LoudnormStatsSchema = z.object({
-  input_i: z.string(),
-  input_tp: z.string(),
-  input_lra: z.string(),
-  input_thresh: z.string(),
-  target_offset: z.string(),
-});
-type LoudnormStats = z.infer<typeof LoudnormStatsSchema>;
+interface LoudnormStats {
+  input_i: string;
+  input_tp: string;
+  input_lra: string;
+  input_thresh: string;
+  target_offset: string;
+}
 
 // Returns the filter_complex lines for audio concat and the output stream label.
 // Single-track case needs no filter — returns empty filterLines and "0:a" as direct input.
@@ -62,10 +62,54 @@ function buildFilterComplex(
 export async function concatAndNormalize(
   options: ConcatAndNormalizeOptions
 ): Promise<string> {
-  const { jobId, audioPaths, transition, workDir, audioConfig } = options;
+  const { jobId, audioPaths, transition, workDir, audioConfig, mastering } = options;
+  const playlistRepeatCount = options.playlistRepeatCount ?? 1;
   if (audioPaths.length === 0) throw new Error("concatAndNormalize: no audio files");
 
   const outputPath = join(workDir, "concat.m4a");
+
+  // Mastering: normalize each track individually, then concat without another normalize pass.
+  if (mastering && audioConfig.normalize !== "off") {
+    const { targetLufs, truePeakDb } = audioConfig;
+    const lra = 11;
+    const loudnormFilter = `loudnorm=I=${targetLufs}:TP=${truePeakDb}:LRA=${lra}`;
+    const masteredPaths = await Promise.all(
+      audioPaths.map(async (p, i) => {
+        const out = join(workDir, `mastered_${i}.m4a`);
+        await runFfmpeg({
+          jobId,
+          args: [
+            "-y", "-i", p,
+            "-af", loudnormFilter,
+            "-c:a", "aac",
+            "-ar", "48000",
+            "-b:a", "384k",
+            out,
+          ],
+        });
+        return out;
+      })
+    );
+    const masteredInputs = masteredPaths.flatMap((p) => ["-i", p]);
+    const { filterLines: mfl, outLabel: mol } = buildConcatFilter(masteredPaths.length, transition);
+    const hasMasteredConcat = !!mfl;
+    await runFfmpeg({
+      jobId,
+      args: [
+        "-y",
+        ...masteredInputs,
+        ...(hasMasteredConcat
+          ? ["-filter_complex", mfl, "-map", `[${mol}]`]
+          : ["-map", "0:a"]),
+        "-c:a", "aac",
+        "-ar", "48000",
+        "-b:a", "384k",
+        outputPath,
+      ],
+    });
+    return repeatAudioIfNeeded(jobId, outputPath, workDir, playlistRepeatCount);
+  }
+
   const inputs = audioPaths.flatMap((p) => ["-i", p]);
   const { filterLines, outLabel } = buildConcatFilter(audioPaths.length, transition);
   const hasConcat = !!filterLines;
@@ -80,11 +124,12 @@ export async function concatAndNormalize(
           ? ["-filter_complex", filterLines, "-map", `[${outLabel}]`]
           : ["-map", "0:a"]),
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-ar", "48000",
+        "-b:a", "384k",
         outputPath,
       ],
     });
-    return outputPath;
+    return repeatAudioIfNeeded(jobId, outputPath, workDir, playlistRepeatCount);
   }
 
   const { targetLufs, truePeakDb } = audioConfig;
@@ -103,11 +148,12 @@ export async function concatAndNormalize(
         "-filter_complex", fastFilter,
         "-map", "[aout]",
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-ar", "48000",
+        "-b:a", "384k",
         outputPath,
       ],
     });
-    return outputPath;
+    return repeatAudioIfNeeded(jobId, outputPath, workDir, playlistRepeatCount);
   }
 
   // Two-pass EBU R128 loudnorm — no WAV intermediate
@@ -136,12 +182,42 @@ export async function concatAndNormalize(
       "-filter_complex", pass2Filter,
       "-map", "[aout]",
       "-c:a", "aac",
-      "-b:a", "192k",
+      "-ar", "48000",
+      "-b:a", "384k",
       outputPath,
     ],
   });
 
-  return outputPath;
+  return repeatAudioIfNeeded(jobId, outputPath, workDir, playlistRepeatCount);
+}
+
+async function repeatAudioIfNeeded(
+  jobId: string | undefined,
+  inputPath: string,
+  workDir: string,
+  repeatCount: number
+): Promise<string> {
+  if (repeatCount <= 1) return inputPath;
+
+  const repeatedPath = join(workDir, "concat_repeated.m4a");
+  const inputs = Array.from({ length: repeatCount }, () => ["-i", inputPath]).flat();
+  const inputLabels = Array.from({ length: repeatCount }, (_, i) => `[${i}:a]`).join("");
+
+  await runFfmpeg({
+    jobId,
+    args: [
+      "-y",
+      ...inputs,
+      "-filter_complex", `${inputLabels}concat=n=${repeatCount}:v=0:a=1[aout]`,
+      "-map", "[aout]",
+      "-c:a", "aac",
+      "-ar", "48000",
+      "-b:a", "384k",
+      repeatedPath,
+    ],
+  });
+
+  return repeatedPath;
 }
 
 // Runs FFmpeg with filter_complex → /dev/null and returns stderr (where loudnorm JSON lives).
@@ -177,9 +253,9 @@ function captureLoudnormStats(
 function parseLoudnormJson(stderr: string): LoudnormStats {
   const match = stderr.match(/\{[\s\S]*?\}/);
   if (!match) throw new Error("concatAndNormalize: loudnorm JSON not found in ffmpeg output");
-  const result = LoudnormStatsSchema.safeParse(JSON.parse(match[0]));
-  if (!result.success) {
-    throw new Error(`concatAndNormalize: loudnorm JSON missing required fields: ${result.error.issues[0]?.message}`);
+  const parsed: unknown = JSON.parse(match[0]);
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("concatAndNormalize: invalid loudnorm JSON");
   }
-  return result.data;
+  return parsed as LoudnormStats;
 }

@@ -18,7 +18,7 @@ export const BackgroundSchema = z.object({
   storagePath: z.string(),
   durationSec: z.number().optional(),
   fit: z.enum(["cover", "contain", "blurred_contain"]).default("cover"),
-  dim: z.number().min(0).max(1).default(0.25),
+  dim: z.number().min(0).max(1).default(0),
   blur: z.number().min(0).max(50).default(0),
   cropX: z.number().min(0).max(1).default(0.5),
   cropY: z.number().min(0).max(1).default(0.5),
@@ -58,12 +58,10 @@ export const OverlayPresetSchema = z.object({
   }),
 
   color: z.object({
-    // Restrict to valid FFmpeg color formats: #RGB/#RRGGBB/#RRGGBBAA, 0xRRGGBB[AA], or named colors.
-    // Prevents filter graph injection via fontcolor= parameter.
-    artist: z.string().regex(/^(#[0-9A-Fa-f]{3,8}|0x[0-9A-Fa-f]{6,8}|[a-zA-Z]+)$/).default("#FFFFFF"),
-    title: z.string().regex(/^(#[0-9A-Fa-f]{3,8}|0x[0-9A-Fa-f]{6,8}|[a-zA-Z]+)$/).default("#FFFFFF"),
-    background: z.string().regex(/^(#[0-9A-Fa-f]{3,8}|0x[0-9A-Fa-f]{6,8}|[a-zA-Z]+)$/).optional(),
-    shadow: z.string().regex(/^(#[0-9A-Fa-f]{3,8}|0x[0-9A-Fa-f]{6,8}|[a-zA-Z]+)$/).optional(),
+    artist: z.string().default("#FFFFFF"),
+    title: z.string().default("#FFFFFF"),
+    background: z.string().optional(),
+    shadow: z.string().optional(),
   }),
 
   card: z.object({
@@ -85,7 +83,7 @@ export type OverlayPreset = z.infer<typeof OverlayPresetSchema>;
 
 // ─── 오버레이 설정 ───────────────────────────────────────────────────────────
 export const OverlayConfigSchema = z.object({
-  displayMode: z.enum(["0", "2", "5", "full"]).default("5"),
+  displayMode: z.enum(["0", "2", "5", "full"]).default("0"),
   presetId: z.string().default("default"),
   presetVersion: z.number().int().positive().default(1),
 });
@@ -95,14 +93,14 @@ export type OverlayConfig = z.infer<typeof OverlayConfigSchema>;
 export const AudioConfigSchema = z.object({
   // ebu_r128: two-pass accurate / ebu_r128_fast: single-pass (saves ~10 min per hour of audio)
   normalize: z.enum(["off", "ebu_r128", "ebu_r128_fast"]).default("ebu_r128_fast"),
-  targetLufs: z.number().default(-14),
-  truePeakDb: z.number().default(-1),
+  targetLufs: z.number().default(-9),
+  truePeakDb: z.number().default(-0.1),
 });
 export type AudioConfig = z.infer<typeof AudioConfigSchema>;
 
 // ─── 트랜지션 ────────────────────────────────────────────────────────────────
 export const TransitionConfigSchema = z.object({
-  type: z.enum(["silence", "crossfade"]).default("crossfade"),
+  type: z.enum(["silence", "crossfade"]).default("silence"),
   crossfadeSec: z.number().min(0).max(10).default(2),
 });
 export type TransitionConfig = z.infer<typeof TransitionConfigSchema>;
@@ -115,20 +113,22 @@ export const ThumbnailConfigSchema = z.object({
 });
 export type ThumbnailConfig = z.infer<typeof ThumbnailConfigSchema>;
 
-// ─── 렌더 설정 ───────────────────────────────────────────────────────────────
+// ─── 웨이브 파형 설정 ───────────────────────────────────────────────────────
 export const WaveformConfigSchema = z.object({
-  style: z.enum(["off", "line", "bars"]).catch("off"),
+  style: z.enum(["off", "bars", "line", "dots"]).default("off"),
 });
+export type WaveformConfig = z.infer<typeof WaveformConfigSchema>;
 
+// ─── 렌더 설정 ───────────────────────────────────────────────────────────────
 export const RenderConfigSchema = z.object({
   transition: TransitionConfigSchema,
   overlay: OverlayConfigSchema,
   audio: AudioConfigSchema,
   thumbnail: ThumbnailConfigSchema,
   waveform: WaveformConfigSchema.default({ style: "off" }),
+  playlistRepeatCount: z.number().int().min(1).max(5).default(1),
   mastering: z.boolean().default(false),
-  outputFormat: z.enum(["mp4", "mov"]).default("mp4"),
-  audioBitrateKbps: z.literal(192).catch(192),
+  audioBitrateKbps: z.literal(384),
   resolution: z.tuple([z.literal(1920), z.literal(1080)]),
   hwaccel: z.enum(["videotoolbox", "none"]).default("videotoolbox"),
 });
@@ -157,6 +157,7 @@ export const ProjectRecordSchema = z.object({
   // which doesn't satisfy z.string().datetime() strict ISO 8601 — use z.string() instead.
   exported_at: z.string().nullable(),
   created_at: z.string(),
+  filesAvailable: z.boolean().optional(),
 });
 export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
 

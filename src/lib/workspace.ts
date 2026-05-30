@@ -1,34 +1,80 @@
-import { join, resolve } from "node:path";
+import fs from "node:fs";
+import path from "node:path";
 
-const WORKSPACE_DIR = process.env.WORKSPACE_DIR ?? "./workspace";
+const WORKSPACE_ROOT = path.resolve(
+  process.env.WORKSPACE_DIR ?? "./workspace"
+);
 
-export const workspacePaths = {
-  root: resolve(WORKSPACE_DIR),
-  import: resolve(join(WORKSPACE_DIR, "import")),
-  export: resolve(join(WORKSPACE_DIR, "export")),
-};
-
-// Throws if absPath escapes the workspace root (path traversal guard).
-export function assertInsideWorkspace(absPath: string): void {
-  const normalized = resolve(absPath);
-  const root = workspacePaths.root;
-  if (normalized !== root && !normalized.startsWith(root + "/")) {
-    throw new Error("path traversal detected");
+export function assertInsideWorkspace(targetPath: string): void {
+  const resolved = path.resolve(targetPath);
+  const relative = path.relative(WORKSPACE_ROOT, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`path traversal detected: ${resolved}`);
   }
 }
 
-// Resolves a storage-relative path to an absolute workspace path, asserting no traversal.
-export function resolveStoragePath(storagePath: string): string {
-  const absPath = join(workspacePaths.root, storagePath);
-  assertInsideWorkspace(absPath);
-  return absPath;
+export const workspacePaths = {
+  root: WORKSPACE_ROOT,
+
+  importDir: (exportId: string) =>
+    path.join(WORKSPACE_ROOT, "import", exportId),
+
+  importFile: (exportId: string, filename: string) =>
+    path.join(WORKSPACE_ROOT, "import", exportId, filename),
+
+  exportDir: (exportId: string) =>
+    path.join(WORKSPACE_ROOT, "export", exportId),
+
+  finalVideo: (exportId: string, format: "mp4" | "mov") =>
+    path.join(WORKSPACE_ROOT, "export", exportId, `final.${format}`),
+
+  tmpDir: (jobId: string) =>
+    path.join(WORKSPACE_ROOT, "tmp", jobId),
+
+  tmpAudioDir: (jobId: string) =>
+    path.join(WORKSPACE_ROOT, "tmp", jobId, "audio"),
+
+  tmpFinalVideo: (jobId: string) =>
+    path.join(WORKSPACE_ROOT, "tmp", jobId, "final.mp4"),
+
+  thumbnail: (exportId: string) =>
+    path.join(WORKSPACE_ROOT, "import", exportId, "thumbnail.jpg"),
+
+  thumbnailPhotoDir: () =>
+    path.join(WORKSPACE_ROOT, "thumbnail", "photos"),
+
+  thumbnailPhoto: (filename: string) =>
+    path.join(WORKSPACE_ROOT, "thumbnail", "photos", filename),
+
+  selectedThumbnailDir: () =>
+    path.join(WORKSPACE_ROOT, "thumbnail", "selected"),
+
+  selectedThumbnail: (filename: string) =>
+    path.join(WORKSPACE_ROOT, "thumbnail", "selected", filename),
+};
+
+export function resolveStoragePath(relativePath: string): string {
+  const abs = path.join(WORKSPACE_ROOT, relativePath);
+  assertInsideWorkspace(abs);
+  return abs;
+}
+
+export function fileExists(p: string): boolean {
+  assertInsideWorkspace(p);
+  return fs.existsSync(p);
+}
+
+export function checkImportFilesExist(exportId: string): boolean {
+  const dir = workspacePaths.importDir(exportId);
+  assertInsideWorkspace(dir);
+  return fs.existsSync(dir);
 }
 
 export const getJobWorkDir = (jobId: string): string =>
-  join(WORKSPACE_DIR, "tmp", jobId);
+  workspacePaths.tmpDir(jobId);
 
 export const getJobAudioDir = (jobId: string): string =>
-  join(getJobWorkDir(jobId), "audio");
+  workspacePaths.tmpAudioDir(jobId);
 
-export const getFinalOutputPath = (jobId: string, format: "mp4" | "mov"): string =>
-  join(getJobWorkDir(jobId), `final.${format}`);
+export const getFinalOutputPath = (jobId: string): string =>
+  workspacePaths.tmpFinalVideo(jobId);

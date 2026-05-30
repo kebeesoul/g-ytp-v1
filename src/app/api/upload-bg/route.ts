@@ -1,11 +1,10 @@
 import { z } from "zod";
-import * as fs from "node:fs/promises";
-import { join, dirname } from "node:path";
+import fs from "node:fs/promises";
 import { BackgroundSchema } from "@/lib/schema";
 import { probeMediaFile } from "@/lib/ffmpeg/probe";
 import { ensureBootCleanup } from "@/lib/render/bootCleanup";
 import { applyBgDefaults } from "@/lib/backgroundDefaults";
-import { workspacePaths } from "@/lib/workspace";
+import { assertInsideWorkspace, resolveStoragePath, workspacePaths } from "@/lib/workspace";
 
 const IMAGE_MIMES = new Set([
   "image/jpeg",
@@ -53,17 +52,30 @@ export async function POST(req: Request): Promise<Response> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const ext = file.name.split(".").pop() ?? (kind === "image" ? "jpg" : "mp4");
   const storagePath = `import/${sessionId.data}/bg.${ext}`;
+  const previousStoragePath = z.string().optional().safeParse(
+    formData.get("previousStoragePath") || undefined
+  );
 
-  // Save directly to workspace — no Supabase Storage round-trip needed
-  const localPath = join(workspacePaths.import, sessionId.data, `bg.${ext}`);
-  await fs.mkdir(dirname(localPath), { recursive: true });
-  await fs.writeFile(localPath, buffer);
+  if (
+    previousStoragePath.success &&
+    previousStoragePath.data &&
+    previousStoragePath.data.startsWith(`import/${sessionId.data}/`)
+  ) {
+    const previousPath = resolveStoragePath(previousStoragePath.data);
+    await fs.rm(previousPath, { force: true });
+  }
+
+  const importDir = workspacePaths.importDir(sessionId.data);
+  const dest = workspacePaths.importFile(sessionId.data, `bg.${ext}`);
+  assertInsideWorkspace(importDir);
+  assertInsideWorkspace(dest);
+  await fs.mkdir(importDir, { recursive: true });
+  await fs.writeFile(dest, buffer);
 
   let durationSec: number | undefined;
 
   if (kind === "video") {
-    // ffprobe로 영상 길이 측정 — workspace 파일 직접 사용 (임시 파일 불필요)
-    const probe = await probeMediaFile(localPath);
+    const probe = await probeMediaFile(dest);
     durationSec = probe.durationSec;
   }
 

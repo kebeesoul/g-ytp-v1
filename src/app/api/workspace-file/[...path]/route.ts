@@ -1,69 +1,75 @@
-import { createReadStream, statSync } from "node:fs";
-import { join } from "node:path";
-import { Readable } from "node:stream";
-import { assertInsideWorkspace, workspacePaths } from "@/lib/workspace";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { resolveStoragePath } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-// MIME types for workspace media files.
-function getMimeType(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string, string> = {
-    mp3: "audio/mpeg",
-    m4a: "audio/mp4",
-    wav: "audio/wav",
-    aac: "audio/aac",
-    ogg: "audio/ogg",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    png: "image/png",
-    webp: "image/webp",
-    gif: "image/gif",
-    mp4: "video/mp4",
-    mov: "video/quicktime",
-    webm: "video/webm",
-    mkv: "video/x-matroska",
-  };
-  return map[ext] ?? "application/octet-stream";
-}
 
 interface RouteParams {
   params: Promise<{ path: string[] }>;
 }
 
-export async function GET(_req: Request, { params }: RouteParams): Promise<Response> {
-  const { path: segments } = await params;
-  const storagePath = segments.join("/");
+function contentTypeForPath(pathname: string): string {
+  const ext = pathname.split(".").pop()?.toLowerCase();
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  if (ext === "mp4") return "video/mp4";
+  if (ext === "mov") return "video/quicktime";
+  if (ext === "mp3") return "audio/mpeg";
+  if (ext === "m4a" || ext === "aac") return "audio/mp4";
+  if (ext === "wav") return "audio/wav";
+  if (ext === "flac") return "audio/flac";
+  if (ext === "ogg") return "audio/ogg";
+  return "application/octet-stream";
+}
 
-  const absPath = join(workspacePaths.root, storagePath);
+export async function GET(
+  _req: Request,
+  { params }: RouteParams
+): Promise<Response> {
+  const { path } = await params;
+  const relativePath = path.join("/");
+  if (
+    !relativePath.startsWith("import/") &&
+    !relativePath.startsWith("export/") &&
+    !relativePath.startsWith("thumbnail/photos/") &&
+    !relativePath.startsWith("thumbnail/selected/")
+  ) {
+    return Response.json({ error: "invalid workspace path" }, { status: 400 });
+  }
 
+  const filePath = resolveStoragePath(relativePath);
+  let fileSize: number;
   try {
-    assertInsideWorkspace(absPath);
+    const info = await stat(/* turbopackIgnore: true */ filePath);
+    if (!info.isFile()) {
+      return Response.json({ error: "not found" }, { status: 404 });
+    }
+    fileSize = info.size;
   } catch {
-    return new Response("forbidden", { status: 403 });
+    return Response.json({ error: "not found" }, { status: 404 });
   }
 
-  let stat: ReturnType<typeof statSync>;
-  try {
-    stat = statSync(absPath);
-  } catch {
-    return new Response("not found", { status: 404 });
-  }
+  const fileStream = createReadStream(/* turbopackIgnore: true */ filePath);
+  const readable = new ReadableStream({
+    start(controller) {
+      fileStream.on("data", (chunk) =>
+        controller.enqueue(chunk instanceof Buffer ? chunk : Buffer.from(chunk))
+      );
+      fileStream.on("end", () => controller.close());
+      fileStream.on("error", (err) => controller.error(err));
+    },
+    cancel() {
+      fileStream.destroy();
+    },
+  });
 
-  if (!stat.isFile()) {
-    return new Response("not found", { status: 404 });
-  }
-
-  const mimeType = getMimeType(absPath);
-  const stream = createReadStream(absPath);
-  const webStream = Readable.toWeb(stream) as ReadableStream;
-
-  return new Response(webStream, {
-    status: 200,
+  return new Response(readable, {
     headers: {
-      "Content-Type": mimeType,
-      "Content-Length": String(stat.size),
+      "Content-Type": contentTypeForPath(relativePath),
+      "Content-Length": fileSize.toString(),
       "Cache-Control": "no-store",
     },
   });

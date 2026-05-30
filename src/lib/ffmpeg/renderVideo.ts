@@ -5,8 +5,8 @@ import { computeTrackTimings } from "@/lib/timecode";
 import { resolveOverlayPreset } from "@/lib/design/presetRegistry";
 import { compileOverlayFilters, resolveOverlayTimings } from "./overlayCompiler";
 import {
-  generatePngCards,
   buildPngCardOverlayLines,
+  generatePngCards,
   type PngCardSpec,
 } from "./overlayPngRenderer";
 import { parseFFmpegProgress, computeEtaSec } from "./parseProgress";
@@ -38,23 +38,32 @@ export async function preparePngCardSpecs(
   const { tracks, renderConfig } = snapshot;
   const { transition, overlay } = renderConfig;
   const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
+  const repeatCount = renderConfig.playlistRepeatCount;
 
   if (preset.renderer !== "png_card" || overlay.displayMode === "0") return null;
 
   const timings = computeTrackTimings(tracks, transition);
   const trackStartSecs = timings.map((t) => t.startSec);
+  const baseDurationSec = computePlaylistDurationSec(snapshot);
 
   const specs: PngCardSpec[] = [];
-  for (let i = 0; i < tracks.length; i++) {
-    const timing = resolveOverlayTimings(trackStartSecs[i], tracks[i].durationSec, overlay.displayMode);
-    if (timing.skip) continue;
-    specs.push({
-      localPath: join(workDir, `card_${i}.png`),
-      track: tracks[i],
-      tStart: timing.tStart,
-      tEnd: timing.tEnd,
-      fadeOut: timing.fadeOut,
-    });
+  for (let cycle = 0; cycle < repeatCount; cycle++) {
+    const cycleOffset = cycle * baseDurationSec;
+    for (let i = 0; i < tracks.length; i++) {
+      const timing = resolveOverlayTimings(
+        trackStartSecs[i] + cycleOffset,
+        tracks[i].durationSec,
+        overlay.displayMode
+      );
+      if (timing.skip) continue;
+      specs.push({
+        localPath: join(workDir, `card_${cycle}_${i}.png`),
+        track: tracks[i],
+        tStart: timing.tStart,
+        tEnd: timing.tEnd,
+        fadeOut: timing.fadeOut,
+      });
+    }
   }
 
   await generatePngCards(specs, preset);
@@ -68,15 +77,14 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   } = options;
 
   const { tracks, renderConfig } = snapshot;
-  const { transition, overlay, waveform, outputFormat, hwaccel } = renderConfig;
+  const { transition, overlay, waveform, hwaccel } = renderConfig;
   const bg = snapshot.background;
+  const repeatCount = renderConfig.playlistRepeatCount;
 
   const timings = computeTrackTimings(tracks, transition);
   const trackStartSecs = timings.map((t) => t.startSec);
-  const lastTiming = timings[timings.length - 1];
-  const totalAudioSec = lastTiming
-    ? lastTiming.startSec + tracks[timings.length - 1].durationSec
-    : 0;
+  const baseDurationSec = computePlaylistDurationSec(snapshot);
+  const totalAudioSec = baseDurationSec * repeatCount;
 
   const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
 
@@ -93,16 +101,39 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       ]
     : ["-loop", "1", "-i", bgLocalPath];
 
-  const videoCodecArgs: string[] = useVideotoolbox
-    ? ["-c:v", "h264_videotoolbox", "-q:v", "60"]
-    : ["-c:v", "libx264", "-preset", "fast", "-crf", "18"];
+  const colorArgs = [
+    "-colorspace", "bt709",
+    "-color_primaries", "bt709",
+    "-color_trc", "bt709",
+  ];
 
-  const formatArgs: string[] = outputFormat === "mp4"
-    ? ["-movflags", "+faststart"]
-    : [];
+  const videoCodecArgs: string[] = useVideotoolbox
+    ? [
+        "-c:v", "h264_videotoolbox",
+        "-profile:v", "high",
+        "-b:v", "16M",
+        "-g", "60",
+        "-r", "30",
+        ...colorArgs,
+      ]
+    : [
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-profile:v", "high",
+        "-b:v", "16M",
+        "-maxrate", "20M",
+        "-bufsize", "32M",
+        "-g", "60",
+        "-keyint_min", "15",
+        "-r", "30",
+        ...colorArgs,
+      ];
+
+  const formatArgs = ["-movflags", "+faststart"];
 
   let filterScript: string;
   let extraInputs: string[] = [];
+  const visualOutputLabel = waveform.style === "off" ? "vout" : "_visualbase";
 
   if (preset.renderer === "png_card" && overlay.displayMode !== "0") {
     // Use pre-computed specs (from preparePngCardSpecs run concurrently with downloads),
@@ -112,16 +143,23 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       specs = options.pngCardSpecs;
     } else {
       const built: PngCardSpec[] = [];
-      for (let i = 0; i < tracks.length; i++) {
-        const timing = resolveOverlayTimings(trackStartSecs[i], tracks[i].durationSec, overlay.displayMode);
-        if (timing.skip) continue;
-        built.push({
-          localPath: join(workDir, `card_${i}.png`),
-          track: tracks[i],
-          tStart: timing.tStart,
-          tEnd: timing.tEnd,
-          fadeOut: timing.fadeOut,
-        });
+      for (let cycle = 0; cycle < repeatCount; cycle++) {
+        const cycleOffset = cycle * baseDurationSec;
+        for (let i = 0; i < tracks.length; i++) {
+          const timing = resolveOverlayTimings(
+            trackStartSecs[i] + cycleOffset,
+            tracks[i].durationSec,
+            overlay.displayMode
+          );
+          if (timing.skip) continue;
+          built.push({
+            localPath: join(workDir, `card_${cycle}_${i}.png`),
+            track: tracks[i],
+            tStart: timing.tStart,
+            tEnd: timing.tEnd,
+            fadeOut: timing.fadeOut,
+          });
+        }
       }
       await generatePngCards(built, preset);
       specs = built;
@@ -130,13 +168,11 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     const bgFilter = buildBgFilter(bg);
 
     if (specs.length === 0) {
-      filterScript = `${bgFilter};\n[_bgproc]copy[vout]`;
+      filterScript = `${bgFilter};\n[_bgproc]copy[${visualOutputLabel}]`;
     } else {
-      // Composite PNG cards directly in the main FFmpeg pass.
-      // Input layout: 0=bg, 1=audio, 2..N+1=PNG cards (looped).
-      extraInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
-      const overlayLines = buildPngCardOverlayLines(specs, 2, preset);
-      filterScript = `${bgFilter};\n` + overlayLines.join(";\n");
+      extraInputs = specs.flatMap((spec) => ["-loop", "1", "-i", spec.localPath]);
+      const overlayLines = buildPngCardOverlayLines(specs, 2, preset, visualOutputLabel);
+      filterScript = `${bgFilter};\n${overlayLines.join(";\n")}`;
     }
   } else {
     // drawtext path (or displayMode "0")
@@ -146,14 +182,11 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       overlay.displayMode,
       preset
     );
-    filterScript = buildFilterScript(bg, overlayFilters);
+    filterScript = buildFilterScript(bg, overlayFilters, visualOutputLabel);
   }
 
-  // Waveform overlay: showwaves converts the audio stream to a video strip
-  // composited at the bottom of the frame. Skipped when style is "off".
   if (waveform.style !== "off") {
-    filterScript = filterScript.replace("[vout]", "[_prevout]");
-    filterScript += `;\n${buildWaveformFilter(waveform.style, 1)}`;
+    filterScript = `${filterScript};\n${buildWaveformFilter(waveform.style, visualOutputLabel)}`;
   }
 
   const filterScriptPath = join(workDir, "filters.txt");
@@ -201,23 +234,31 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   onProgress?.(1.0, null);
 }
 
+function computePlaylistDurationSec(snapshot: ProjectSnapshot): number {
+  const timings = computeTrackTimings(snapshot.tracks, snapshot.renderConfig.transition);
+  const lastTiming = timings[timings.length - 1];
+  const lastTrack = snapshot.tracks[timings.length - 1];
+  return lastTiming && lastTrack ? lastTiming.startSec + lastTrack.durationSec : 0;
+}
+
 function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   const fit = bg?.fit ?? "cover";
-  const dim = bg?.dim ?? 0.25;
+  const dim = bg?.dim ?? 0;
   const blur = bg?.blur ?? 0;
   const cropX = bg?.cropX ?? 0.5;
   const cropY = bg?.cropY ?? 0.5;
   const cropW = bg?.cropW ?? 1.0;
 
-  // min() ensures crop never requests dimensions larger than the source.
-  // \, escapes the comma inside the FFmpeg expression evaluator.
-  // (in_w-out_w)/(in_h-out_h) compute the remaining space for centered positioning.
+  // Crop a cropW-fraction of the largest 16:9 box that fits inside the source.
+  // The min() guards prevent near-16:9 images from requesting a crop 1-2px
+  // larger than the source because of ratio rounding.
+  const wCoef = cropW.toFixed(6);
+  const xCoef = cropX.toFixed(6);
+  const yCoef = cropY.toFixed(6);
   const cropExpr =
-    `crop=min(in_w\\,in_h*16/9)*${cropW.toFixed(6)}` +
-    `:min(in_h\\,in_w*9/16)*${cropW.toFixed(6)}` +
-    `:(in_w-out_w)*${cropX.toFixed(6)}` +
-    `:(in_h-out_h)*${cropY.toFixed(6)}` +
-    `,scale=1920:1080:flags=lanczos`;
+    `crop=min(in_w\\,in_h*16/9)*${wCoef}:min(in_h\\,in_w*9/16)*${wCoef}:` +
+    `(in_w-out_w)*${xCoef}:(in_h-out_h)*${yCoef},` +
+    `scale=1920:1080:flags=lanczos`;
 
   if (fit === "blurred_contain") {
     const blurVal = blur > 0 ? blur : 20;
@@ -234,27 +275,73 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
   );
 }
 
-// Builds a showwaves filter that renders an audio-reactive waveform strip
-// and composites it at the bottom of the previous video label.
-// audioInputIdx is the FFmpeg input index for the audio file (always 1).
-function buildWaveformFilter(style: "line" | "bars", audioInputIdx: number): string {
-  const mode = style === "bars" ? "cbars" : "line";
-  return [
-    `[${audioInputIdx}:a]showwaves=s=1920x120:mode=${mode}:colors=white@0.7:scale=sqrt[_wave]`,
-    `[_prevout][_wave]overlay=0:H-h-24[vout]`,
-  ].join(";\n");
-}
-
 function buildFilterScript(
   bg: ProjectSnapshot["background"],
-  overlayFilters: string[]
+  overlayFilters: string[],
+  finalLabel = "vout"
 ): string {
   const bgFilter = buildBgFilter(bg);
 
   if (overlayFilters.length === 0) {
-    return `${bgFilter};\n[_bgproc]copy[vout]`;
+    return `${bgFilter};\n[_bgproc]copy[${finalLabel}]`;
   }
 
-  const chain = `[_bgproc]${overlayFilters.join(",")}[vout]`;
+  const chain = `[_bgproc]${overlayFilters.join(",")}[${finalLabel}]`;
   return `${bgFilter};\n${chain}`;
+}
+
+function buildWaveformFilter(
+  style: ProjectSnapshot["renderConfig"]["waveform"]["style"],
+  baseLabel: string
+): string {
+  const presets: Record<Exclude<typeof style, "off">, {
+    size: string;
+    mode: string;
+    scale: string;
+    draw: string;
+    n: number;
+    opacity: number;
+    x: number;
+    bottom: number;
+  }> = {
+    bars: {
+      size: "210x62",
+      mode: "cline",
+      scale: "sqrt",
+      draw: "full",
+      n: 1800,
+      opacity: 0.9,
+      x: 92,
+      bottom: 78,
+    },
+    line: {
+      size: "238x44",
+      mode: "p2p",
+      scale: "cbrt",
+      draw: "scale",
+      n: 1200,
+      opacity: 0.78,
+      x: 92,
+      bottom: 90,
+    },
+    dots: {
+      size: "188x72",
+      mode: "point",
+      scale: "sqrt",
+      draw: "full",
+      n: 2100,
+      opacity: 0.86,
+      x: 104,
+      bottom: 74,
+    },
+  };
+  const preset = style === "off" ? presets.bars : presets[style];
+
+  return (
+    `[1:a]showwaves=s=${preset.size}:mode=${preset.mode}:n=${preset.n}:` +
+    `scale=${preset.scale}:draw=${preset.draw}:colors=0xFFFFFF:rate=15,` +
+    `format=rgba,colorkey=0x000000:0.08:0.0,` +
+    `colorchannelmixer=aa=${preset.opacity.toFixed(2)}[_waveform];\n` +
+    `[${baseLabel}][_waveform]overlay=x=(W-w)/2:y=H-h-${preset.bottom}:shortest=1[vout]`
+  );
 }

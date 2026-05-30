@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
+  BackgroundSchema,
   OverlayPresetSchema,
   ProjectRecordSchema,
   ProjectSnapshotSchema,
@@ -20,6 +22,8 @@ import { BackgroundPicker } from "@/components/editor/BackgroundPicker";
 import { OverlayPresetSlots } from "@/components/editor/OverlayPresetSlots";
 import { RenderPanel } from "@/components/editor/RenderPanel";
 import { TracklistExport } from "@/components/editor/TracklistExport";
+import { FIXED_MASTERING_AUDIO_CONFIG } from "@/lib/mastering/constants";
+import TitleRecommend from "@/components/editor/TitleRecommend";
 
 interface EditorPageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -28,15 +32,17 @@ interface EditorPageProps {
 const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
   transition: { type: "silence", crossfadeSec: 2 },
   overlay: { displayMode: "0", presetId: "default", presetVersion: 1 },
-  audio: { normalize: "ebu_r128", targetLufs: -14, truePeakDb: -1 },
+  audio: FIXED_MASTERING_AUDIO_CONFIG,
   thumbnail: { mode: "extract", presetId: "default", presetVersion: 1 },
   waveform: { style: "off" },
+  playlistRepeatCount: 1,
   mastering: false,
-  outputFormat: "mp4",
-  audioBitrateKbps: 192,
+  audioBitrateKbps: 384,
   resolution: [1920, 1080],
   hwaccel: "videotoolbox",
 };
+
+const SELECTED_THUMBNAIL_KEY = "gytp:selected-thumbnail-background";
 
 function compareFilename(a: { filename: string }, b: { filename: string }): number {
   return a.filename.localeCompare(b.filename, undefined, {
@@ -59,19 +65,33 @@ function withSequentialOrder(tracks: Track[]): Track[] {
 export default function EditorPage({ searchParams }: EditorPageProps) {
   const params = use(searchParams);
   const fromId = typeof params.from === "string" ? params.from : null;
+  const selectedThumbnail = params.selectedThumbnail === "1";
 
   const [editorSessionId] = useState<string>(() => crypto.randomUUID());
   const [title, setTitle] = useState("");
   const [tracks, setTracks] = useState<Track[]>([]);
-  const [background, setBackground] = useState<Background | null>(null);
+  const [background, setBackground] = useState<Background | null>(() => {
+    if (fromId || !selectedThumbnail || typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(SELECTED_THUMBNAIL_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = BackgroundSchema.safeParse(JSON.parse(raw));
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  });
   const [transitionType, setTransitionType] = useState<"silence" | "crossfade">("silence");
   const [crossfadeSec] = useState(2);
   const [overlayMode, setOverlayMode] = useState<"0" | "2" | "5" | "full">("0");
   const [waveformStyle, setWaveformStyle] = useState<ProjectSnapshot["renderConfig"]["waveform"]["style"]>("off");
+  const [playlistRepeatCount, setPlaylistRepeatCount] = useState(1);
   const [hashtags, setHashtags] = useState<string[]>([]);
   // Separate input state — only synced to hashtags on blur to avoid per-keystroke snapshot updates.
   const [hashtagInput, setHashtagInput] = useState("");
-  const [outputFormat, setOutputFormat] = useState<"mp4" | "mov">("mp4");
+  const [hashtagLoading, setHashtagLoading] = useState(false);
+  const [hashtagError, setHashtagError] = useState<string | null>(null);
+  const [mastering, setMastering] = useState(false);
 
   const [overlayPresetId, setOverlayPresetId] = useState("default");
   const [presets, setPresets] = useState<(OverlayPreset | null)[]>(Array(6).fill(null));
@@ -155,10 +175,11 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
         setTransitionType(snapshot.renderConfig.transition.type);
         setOverlayMode(snapshot.renderConfig.overlay.displayMode);
         setWaveformStyle(snapshot.renderConfig.waveform.style);
+        setPlaylistRepeatCount(snapshot.renderConfig.playlistRepeatCount);
         setOverlayPresetId(snapshot.renderConfig.overlay.presetId);
         setHashtags(snapshot.hashtags);
         setHashtagInput(snapshot.hashtags.join(", "));
-        setOutputFormat(snapshot.renderConfig.outputFormat);
+        setMastering(snapshot.renderConfig.mastering);
         setHydrateLoading(false);
       } catch (err) {
         setHydrateError(err instanceof Error ? err.message : "복원 실패");
@@ -166,6 +187,12 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
       }
     })();
   }, [fromId]);
+
+  useEffect(() => {
+    if (!fromId && selectedThumbnail) {
+      window.localStorage.removeItem(SELECTED_THUMBNAIL_KEY);
+    }
+  }, [fromId, selectedThumbnail]);
 
   function buildSnapshot(): ProjectSnapshot | { error: string } {
     const transition: TransitionConfig = {
@@ -186,7 +213,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
           presetVersion: presets.find((p) => p?.id === overlayPresetId)?.version ?? 1,
         },
         waveform: { style: waveformStyle },
-        outputFormat,
+        playlistRepeatCount,
+        mastering,
       },
       hashtags,
     };
@@ -246,47 +274,108 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
     }
   }
 
+  function parseHashtagInput(value: string): string[] {
+    return value
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean);
+  }
+
+  async function handleRecommendHashtags(): Promise<void> {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      setHashtagError("Session Title을 먼저 입력하세요");
+      return;
+    }
+
+    setHashtagLoading(true);
+    setHashtagError(null);
+    try {
+      const res = await fetch("/api/hashtags-recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmedTitle }),
+      });
+      const body = (await res.json()) as { hashtags?: string[]; error?: string };
+      if (!res.ok || !body.hashtags?.length) {
+        throw new Error(body.error ?? `hashtag recommend failed: ${res.status}`);
+      }
+
+      const merged: string[] = [];
+      for (const tag of body.hashtags) {
+        if (!merged.includes(tag)) merged.push(tag);
+      }
+      setHashtags(merged);
+      setHashtagInput(merged.join(", "));
+    } catch (err) {
+      setHashtagError(err instanceof Error ? err.message : "해시태그 추천 실패");
+    } finally {
+      setHashtagLoading(false);
+    }
+  }
+
   const snapshot = useMemo(
     () => buildSnapshot(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [title, tracks, background, transitionType, crossfadeSec, overlayMode, overlayPresetId, presets, outputFormat, hashtags, waveformStyle]
+    [title, tracks, background, transitionType, crossfadeSec, overlayMode, waveformStyle, playlistRepeatCount, overlayPresetId, presets, mastering, hashtags]
   );
   const snapshotValid = !("error" in snapshot);
 
   if (hydrateLoading) {
     return (
-      <div className="flex min-h-full items-center justify-center bg-gray-950">
-        <p className="text-sm text-gray-400">프로젝트 복원 중...</p>
+      <div className="flex min-h-full items-center justify-center bg-[var(--vm-bg)]">
+        <p className="vm-label">Loading project...</p>
       </div>
     );
   }
 
   if (hydrateError) {
     return (
-      <div className="flex min-h-full items-center justify-center bg-gray-950">
-        <p className="text-sm text-red-400">복원 실패: {hydrateError}</p>
+      <div className="flex min-h-full items-center justify-center bg-[var(--vm-bg)]">
+        <p className="text-sm text-[var(--vm-error)]">복원 실패: {hydrateError}</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-gray-950 px-6 py-8">
-      {ffmpegWarning && (
-        <div className="mx-auto mb-4 max-w-6xl rounded-md border border-yellow-500/40 bg-yellow-950/40 px-4 py-3 text-sm text-yellow-300">
-          ⚠ FFmpeg 미설치: {ffmpegWarning}
-        </div>
-      )}
-      {presetLoadWarning && (
-        <div className="mx-auto mb-4 max-w-6xl rounded-md border border-yellow-500/40 bg-yellow-950/40 px-4 py-3 text-sm text-yellow-300">
-          ⚠ 오버레이 프리셋: {presetLoadWarning}
-        </div>
-      )}
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="flex flex-col gap-6">
-          <TitleInput value={title} onChange={setTitle} />
+    <div className="vm-shell">
+      <aside className="vm-rail flex h-[calc(100vh-58px)] flex-col gap-5 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pr-1 [overflow-anchor:none]">
+          <div className="flex flex-col">
+            <TitleInput value={title} onChange={setTitle} />
+            <TitleRecommend tracks={tracks} onSelect={setTitle} />
+          </div>
+
+          <div className="vm-panel vm-panel-pad flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-3">
+              <span className="vm-label">Hashtags</span>
+              <button
+                type="button"
+                onClick={() => void handleRecommendHashtags()}
+                disabled={hashtagLoading}
+                className="text-[10px] font-normal leading-none tracking-normal text-[var(--vm-cyan)] transition-colors hover:text-white disabled:cursor-wait disabled:text-[var(--vm-muted)]"
+              >
+                {hashtagLoading ? "추천 중..." : "추천"}
+              </button>
+            </div>
+            <input
+              type="text"
+              value={hashtagInput}
+              onChange={(e) => setHashtagInput(e.target.value)}
+              onBlur={(e) => {
+                setHashtags(parseHashtagInput(e.target.value));
+              }}
+              placeholder="#lofi, #chill"
+              className="vm-input"
+            />
+            {hashtagError && (
+              <p className="text-[10px] text-[var(--vm-error)]">{hashtagError}</p>
+            )}
+          </div>
 
           <TrackList
             tracks={tracks}
+            activeTrackId={activeTrackId}
             onReorder={setTracks}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -294,92 +383,137 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             onFilesAdded={handleFilesAdded}
           />
 
+          {snapshotValid && (
+            <TracklistExport snapshot={snapshot as ProjectSnapshot} />
+          )}
+
           <AudioPlayer storagePath={activeStoragePath} trackId={activeTrackId} />
         </div>
+      </aside>
 
-        <div className="flex flex-col gap-6">
-          <BackgroundPicker
-            editorSessionId={editorSessionId}
-            value={background}
-            onChange={setBackground}
-          />
+      <section className="vm-main">
+        {ffmpegWarning && (
+          <div className="vm-panel mb-4 px-4 py-3 text-xs text-[var(--vm-amber)]">
+            FFmpeg: {ffmpegWarning}
+          </div>
+        )}
+        {presetLoadWarning && (
+          <div className="vm-panel mb-4 px-4 py-3 text-xs text-[var(--vm-amber)]">
+            Overlay preset: {presetLoadWarning}
+          </div>
+        )}
+        <div className="grid h-full min-h-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(520px,1fr)_380px]">
+          <div className="flex min-h-0 flex-col gap-5 overflow-y-auto pr-1 [overflow-anchor:none]">
+            <BackgroundPicker
+              editorSessionId={editorSessionId}
+              value={background}
+              onChange={setBackground}
+            />
 
-          <OverlayPresetSlots
-            presets={presets}
-            selectedId={overlayPresetId}
-            onChange={setOverlayPresetId}
-          />
+            <OverlayPresetSlots
+              presets={presets}
+              selectedId={overlayPresetId}
+              onChange={setOverlayPresetId}
+            />
 
-          <div className="flex flex-col gap-3 rounded-md border border-gray-700 bg-gray-900 p-4">
-            <span className="text-sm font-medium text-gray-300">렌더 설정</span>
-
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-gray-400">Transition</span>
-              <div className="flex gap-4">
-                {(["silence", "crossfade"] as const).map((t) => (
-                  <label key={t} className="flex items-center gap-2 text-sm text-gray-200">
-                    <input
-                      type="radio"
-                      name="transition"
-                      value={t}
-                      checked={transitionType === t}
-                      onChange={() => setTransitionType(t)}
-                    />
-                    {t === "silence" ? "silence" : `crossfade ${crossfadeSec}s`}
-                  </label>
-                ))}
+            <div className="vm-panel vm-panel-pad flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="vm-label">Thumbnail</span>
+                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--vm-muted)]">
+                  YouTube
+                </span>
               </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-gray-400">Overlay 표시</span>
-              <div className="flex gap-3 flex-wrap">
-                {(["0", "2", "5", "full"] as const).map((m) => (
-                  <label key={m} className="flex items-center gap-2 text-sm text-gray-200">
-                    <input
-                      type="radio"
-                      name="overlayMode"
-                      value={m}
-                      checked={overlayMode === m}
-                      onChange={() => setOverlayMode(m)}
-                    />
-                    {m === "0" ? "없음" : m === "full" ? "Full" : `${m}s`}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-gray-400">해시태그 (쉼표 구분)</span>
-              <input
-                type="text"
-                value={hashtagInput}
-                onChange={(e) => setHashtagInput(e.target.value)}
-                onBlur={(e) => {
-                  const parsed = e.target.value
-                    .split(",")
-                    .map((h) => h.trim())
-                    .filter(Boolean);
-                  setHashtags(parsed);
-                }}
-                placeholder="#lofi, #chill"
-                className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-              />
+              <p className="text-[11px] leading-relaxed text-[var(--vm-subtle)]">
+                YouTube 업로드용 썸네일은 별도 1280x720 캔버스에서 제작합니다.
+              </p>
+              <Link href="/thumbnail" className="vm-button-secondary text-center">
+                Open Thumbnail Maker
+              </Link>
             </div>
           </div>
 
-          <RenderPanel
-            exportId={editorSessionId}
-            buildSnapshot={buildSnapshot}
-            outputFormat={outputFormat}
-            onOutputFormatChange={setOutputFormat}
-          />
+          <div className="flex min-h-0 flex-col gap-5 overflow-y-auto [overflow-anchor:none]">
+            <div className="vm-panel vm-panel-pad flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="vm-label">Render Settings</span>
+                <span className="text-[11px] uppercase tracking-[0.16em] text-[var(--vm-cyan)]">Transparent</span>
+              </div>
 
-          {snapshotValid && tracks.length > 0 && (
-            <TracklistExport snapshot={snapshot as ProjectSnapshot} />
-          )}
+              <div className="flex flex-col gap-1">
+                <span className="vm-label">Transition</span>
+                <div className="flex flex-wrap gap-2">
+                  {(["silence", "crossfade"] as const).map((t) => (
+                    <label key={t} className="flex items-center gap-2 border border-[var(--vm-border)] bg-[#0b0b0b] px-3 py-2 text-xs text-[var(--vm-text)]">
+                      <input
+                        type="radio"
+                        name="transition"
+                        value={t}
+                        checked={transitionType === t}
+                        onChange={() => setTransitionType(t)}
+                        className="accent-[var(--vm-cyan)]"
+                      />
+                      {t === "silence" ? "silence" : `crossfade ${crossfadeSec}s`}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="vm-label">Overlay Window</span>
+                <div className="flex flex-wrap gap-2">
+                  {(["0", "2", "5", "full"] as const).map((m) => (
+                    <label key={m} className="flex items-center gap-2 border border-[var(--vm-border)] bg-[#0b0b0b] px-3 py-2 text-xs text-[var(--vm-text)]">
+                      <input
+                        type="radio"
+                        name="overlayMode"
+                        value={m}
+                        checked={overlayMode === m}
+                        onChange={() => setOverlayMode(m)}
+                        className="accent-[var(--vm-cyan)]"
+                      />
+                      {m === "0" ? "없음" : m === "full" ? "Full" : `${m}s`}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="vm-label">Waveform</span>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    ["bars", "Wave 1"],
+                    ["line", "Wave 2"],
+                    ["dots", "Wave 3"],
+                    ["off", "None"],
+                  ] as const).map(([style, label]) => (
+                    <label key={style} className="flex items-center gap-2 border border-[var(--vm-border)] bg-[#0b0b0b] px-3 py-2 text-xs text-[var(--vm-text)]">
+                      <input
+                        type="radio"
+                        name="waveformStyle"
+                        value={style}
+                        checked={waveformStyle === style}
+                        onChange={() => setWaveformStyle(style)}
+                        className="accent-[var(--vm-cyan)]"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+
+            <RenderPanel
+              exportId={editorSessionId}
+              buildSnapshot={buildSnapshot}
+              mastering={mastering}
+              onMasteringChange={setMastering}
+              playlistRepeatCount={playlistRepeatCount}
+              onPlaylistRepeatCountChange={setPlaylistRepeatCount}
+            />
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

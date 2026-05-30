@@ -1,11 +1,11 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { z } from "zod";
+import fs from "node:fs";
+import { rm } from "node:fs/promises";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ProjectRecordSchema } from "@/lib/schema";
 import { activeProcesses } from "@/lib/render/processRegistry";
 import { listStorageFiles, removeFromStorage } from "@/lib/supabase/storage";
-import { workspacePaths } from "@/lib/workspace";
+import { assertInsideWorkspace, checkImportFilesExist, workspacePaths } from "@/lib/workspace";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -36,7 +36,7 @@ export async function GET(_req: Request, { params }: RouteParams): Promise<Respo
 
   return Response.json({
     ...record.data,
-    filesAvailable: existsSync(join(workspacePaths.import, exportId)),
+    filesAvailable: checkImportFilesExist(record.data.id),
   });
 }
 
@@ -55,12 +55,17 @@ export async function DELETE(_req: Request, { params }: RouteParams): Promise<Re
     .eq("project_id", exportId)
     .in("status", ["queued", "running"]);
 
-  const hasActiveDbJob = (activeJobs?.length ?? 0) > 0;
-  const hasActiveProcess = (activeJobs ?? []).some((j) => activeProcesses.has(j.id));
-
-  if (hasActiveDbJob || hasActiveProcess) {
+  if (activeJobs && activeJobs.length > 0) {
     return Response.json(
       { error: "cannot delete project while render is running" },
+      { status: 409 }
+    );
+  }
+
+  const hasActiveProcess = (activeJobs ?? []).some((j) => activeProcesses.has(j.id));
+  if (hasActiveProcess) {
+    return Response.json(
+      { error: "render process still active" },
       { status: 409 }
     );
   }
@@ -86,15 +91,20 @@ export async function DELETE(_req: Request, { params }: RouteParams): Promise<Re
     }
   }
 
-  // STEP 3: import 폴더 삭제 + 검증
-  const importPrefix = `import/${exportId}`;
-  const importList = await listStorageFiles(importPrefix);
-  if (importList.length > 0) {
-    await removeFromStorage(importList);
-    const importLeft = await listStorageFiles(importPrefix);
-    if (importLeft.length > 0) {
-      return Response.json({ error: "import not empty after remove" }, { status: 500 });
+  // STEP 3: local import/export 폴더 삭제 + 검증
+  const importDir = workspacePaths.importDir(exportId);
+  assertInsideWorkspace(importDir);
+  if (fs.existsSync(importDir)) {
+    await rm(importDir, { recursive: true, force: true });
+    if (fs.existsSync(importDir)) {
+      return Response.json({ error: "import dir delete failed" }, { status: 500 });
     }
+  }
+
+  const localExportDir = workspacePaths.exportDir(exportId);
+  assertInsideWorkspace(localExportDir);
+  if (fs.existsSync(localExportDir)) {
+    await rm(localExportDir, { recursive: true, force: true });
   }
 
   // STEP 4: latest_job_id NULL 해제

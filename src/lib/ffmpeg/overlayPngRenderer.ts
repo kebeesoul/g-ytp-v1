@@ -1,8 +1,7 @@
-import { writeFile } from "node:fs/promises";
 import type { Track, OverlayPreset } from "@/lib/schema";
 import { runFfmpeg } from "./runFfmpeg";
+import { resolveOverlayFontPath } from "./overlayFontResolver";
 
-const FONT_PATH = process.env.FONT_PATH_KR ?? "/System/Library/Fonts/AppleSDGothicNeo.ttc";
 const CARD_GEN_CONCURRENCY = 4;
 
 // Timing + path for one pre-rendered PNG card.
@@ -60,10 +59,11 @@ async function generateSinglePng(
     ? `h${layout.y - titleLineH}`
     : `${layout.y - titleLineH}`;
 
-  const fontfile = escapeDrawtext(FONT_PATH);
+  const artistFontfile = escapeDrawtext(resolveOverlayFontPath(typography.artistFontFamily));
+  const titleFontfile = escapeDrawtext(resolveOverlayFontPath(typography.titleFontFamily));
 
   const artistFilter =
-    `drawtext=fontfile='${fontfile}'` +
+    `drawtext=fontfile='${artistFontfile}'` +
     `:text='${escapeDrawtext(track.artist)}'` +
     `:x=${layout.x}:y=${yArtist}` +
     `:fontsize=${typography.artistFontSize}` +
@@ -71,7 +71,7 @@ async function generateSinglePng(
     `:fix_bounds=1`;
 
   const titleFilter =
-    `drawtext=fontfile='${fontfile}'` +
+    `drawtext=fontfile='${titleFontfile}'` +
     `:text='${escapeDrawtext(track.title)}'` +
     `:x=${layout.x}:y=${yTitle}` +
     `:fontsize=${typography.titleFontSize}` +
@@ -93,48 +93,14 @@ async function generateSinglePng(
   });
 }
 
-// Pre-render all card overlays onto a transparent RGBA base, producing a single
-// overlay video. The caller then composites this once onto the background instead
-// of running N sequential overlay ops per frame in the main render.
-// Input 0 = lavfi transparent base; inputs 1..N = PNG cards (loop 1).
-export async function prerenderOverlayTrack(
-  specs: PngCardSpec[],
-  preset: OverlayPreset,
-  totalDurationSec: number,
-  outputPath: string,
-  scriptPath: string
-): Promise<void> {
-  if (specs.length === 0) return;
-
-  // Cards start at input index 1 (lavfi transparent base is input 0).
-  const overlayLines = buildPngCardOverlayLines(specs, 1, preset);
-  const filterScript = "[0:v]format=rgba[_bgproc];\n" + overlayLines.join(";\n");
-  await writeFile(scriptPath, filterScript, "utf8");
-
-  const cardInputs = specs.flatMap((s) => ["-loop", "1", "-i", s.localPath]);
-
-  await runFfmpeg({
-    args: [
-      "-y",
-      "-f", "lavfi",
-      "-i", `color=c=black@0.0:s=1920x1080:r=30:d=${totalDurationSec.toFixed(3)}`,
-      ...cardInputs,
-      "-filter_complex_script", scriptPath,
-      "-map", "[vout]",
-      "-c:v", "qtrle",     // lossless RLE — efficient for mostly-transparent video
-      "-pix_fmt", "argb",  // 32-bit RGBA preserves transparency
-      outputPath,
-    ],
-  });
-}
-
 // Build filter_complex lines for compositing pre-rendered PNG cards onto the video.
 // startInputIndex: FFmpeg input index of the first card (0=bg, 1=audio → cards start at 2).
 // Returns lines to join with ";\n" after the bg filter line.
 export function buildPngCardOverlayLines(
   specs: PngCardSpec[],
   startInputIndex: number,
-  preset: OverlayPreset
+  preset: OverlayPreset,
+  finalLabel = "vout"
 ): string[] {
   const lines: string[] = [];
   let prevLabel = "_bgproc";
@@ -143,7 +109,7 @@ export function buildPngCardOverlayLines(
     const { tStart, tEnd, fadeOut: hasFadeOut } = specs[i];
     const inputIdx = startInputIndex + i;
     const cardLabel = `_card${i}`;
-    const nextLabel = i === specs.length - 1 ? "vout" : `_v${i}`;
+    const nextLabel = i === specs.length - 1 ? finalLabel : `_v${i}`;
     const tFadeOutStart = tEnd - preset.animation.fadeOutSec;
 
     const fadeInFilter =
@@ -163,4 +129,3 @@ export function buildPngCardOverlayLines(
 
   return lines;
 }
-

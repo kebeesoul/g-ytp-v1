@@ -1,20 +1,25 @@
-import { mkdir, copyFile } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { copyFile, mkdir } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import { supabaseServer } from "@/lib/supabase/server";
 import { uploadToStorage } from "@/lib/supabase/storage";
 import { concatAndNormalize } from "@/lib/ffmpeg/concatAndNormalize";
 import { renderVideo, preparePngCardSpecs } from "@/lib/ffmpeg/renderVideo";
 import { extractThumbnail } from "@/lib/ffmpeg/thumbnail";
+import { masterTracksForRender } from "@/lib/mastering/renderMastering";
 import { generateTracklistText } from "@/lib/tracklist";
-import { getJobWorkDir, getFinalOutputPath, resolveStoragePath } from "@/lib/workspace";
+import {
+  assertInsideWorkspace,
+  fileExists,
+  getJobWorkDir,
+  resolveStoragePath,
+  workspacePaths,
+} from "@/lib/workspace";
 import { activeProcesses, cancelledJobs } from "./processRegistry";
 import { jobQueue } from "./jobQueue";
 import { cleanupIntermediateFiles } from "./cleanupIntermediateFiles";
 import { PresetRowSchema, rowToPreset } from "@/lib/presets";
 import { registerPreset } from "@/lib/design/presetRegistry";
-import { ProjectSnapshotSchema, RenderJobRecordSchema } from "@/lib/schema";
 import type { ProjectSnapshot, Track, Background } from "@/lib/schema";
-import { masterTracksForRender } from "@/lib/mastering/masterTracksForRender";
 
 export async function runRenderPipeline(jobId: string): Promise<void> {
   const supabase = supabaseServer;
@@ -28,11 +33,7 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       .eq("id", jobId)
       .single();
     if (!job) throw new Error(`render_jobs: ${jobId} not found`);
-    const jobParsed = RenderJobRecordSchema.safeParse(job);
-    if (!jobParsed.success) {
-      throw new Error(`render_jobs row invalid: ${jobParsed.error.issues[0]?.message}`);
-    }
-    exportId = jobParsed.data.project_id;
+    exportId = job.project_id as string;
 
     const { data: project } = await supabase
       .from("projects")
@@ -41,11 +42,7 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       .single();
     if (!project) throw new Error(`projects: ${exportId} not found`);
 
-    const snapshotParsed = ProjectSnapshotSchema.safeParse(project.snapshot);
-    if (!snapshotParsed.success) {
-      throw new Error(`project snapshot schema invalid: ${snapshotParsed.error.issues[0]?.message}`);
-    }
-    let snapshot = snapshotParsed.data;
+    let snapshot = project.snapshot as ProjectSnapshot;
 
     // Load user-saved overlay preset from DB into the in-memory registry before rendering.
     // The default preset is already in the registry; skip the DB lookup for it.
@@ -90,36 +87,52 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
 
     if (!snapshot.background) throw new Error("background is required");
     const bgLocalPath = resolveStoragePath(snapshot.background.storagePath);
+    if (!fileExists(bgLocalPath)) {
+      throw new Error(`input file not found: ${snapshot.background.storagePath}`);
+    }
 
-    // A: Resolve track paths from local workspace + prepare PNG cards in parallel.
-    // Files are already on disk from the upload step — no download needed.
-    let audioPaths = snapshot.tracks.map((t) =>
-      resolveStoragePath(t.storagePath)
-    );
-    const pngCardSpecs = await preparePngCardSpecs(snapshot, workDir);
+    // A: Resolve local input files + prepare PNG cards in parallel.
+    // PNG card generation only requires snapshot data (no downloaded files needed).
+    const [audioPaths, pngCardSpecs] = await Promise.all([
+      resolveTrackPaths(snapshot.tracks),
+      preparePngCardSpecs(snapshot, workDir),
+    ]);
     updateJobQueue(jobId, exportId, "running", 0.05, null, null);
 
-    // Optional: run Python mastering worker before concat.
-    // Mastering handles loudness internally, so normalize is set to "off".
+    const renderAudioPaths = snapshot.renderConfig.mastering
+      ? (await masterTracksForRender({
+          jobId,
+          exportId,
+          audioPaths,
+          tracks: snapshot.tracks,
+          workDir,
+        })).map((track) => track.localPath)
+      : audioPaths;
+
     if (snapshot.renderConfig.mastering) {
-      audioPaths = await masterTracksForRender(snapshot.tracks, workDir);
+      updateJobQueue(jobId, exportId, "running", 0.1, null, null);
+      await flushProgressToDB(jobId, 0.1, null);
     }
 
     // B: Concat + normalize in one pipeline — no intermediate WAV file
     const concatM4aPath = await concatAndNormalize({
       jobId,
-      audioPaths,
+      audioPaths: renderAudioPaths,
       transition: snapshot.renderConfig.transition,
       workDir,
       audioConfig: snapshot.renderConfig.mastering
         ? { ...snapshot.renderConfig.audio, normalize: "off" }
         : snapshot.renderConfig.audio,
+      playlistRepeatCount: snapshot.renderConfig.playlistRepeatCount,
     });
     updateJobQueue(jobId, exportId, "running", 0.15, null, null);
     await flushProgressToDB(jobId, 0.15, null);
 
-    const outputFormat = snapshot.renderConfig.outputFormat;
-    const outputPath = getFinalOutputPath(jobId, outputFormat);
+    const exportDir = workspacePaths.exportDir(exportId);
+    assertInsideWorkspace(exportDir);
+    await mkdir(exportDir, { recursive: true });
+    const outputPath = workspacePaths.finalVideo(exportId, "mp4");
+    assertInsideWorkspace(outputPath);
 
     let lastFlush = Date.now();
     const onProgress = async (globalProgress: number, etaSec: number | null) => {
@@ -145,7 +158,9 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
 
     // C: Extract thumbnail and upload tracklist concurrently
     const tracklistText = generateTracklistText(snapshot);
-    const thumbLocalPath = join(workDir, "thumbnail.jpg");
+    const thumbLocalPath = workspacePaths.thumbnail(exportId);
+    assertInsideWorkspace(thumbLocalPath);
+    await mkdir(dirname(thumbLocalPath), { recursive: true });
 
     await Promise.all([
       extractThumbnail(outputPath, thumbLocalPath),
@@ -156,9 +171,7 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       ),
     ]);
 
-    const thumbBuf = await readFileBuffer(thumbLocalPath);
     const thumbStoragePath = `import/${exportId}/thumbnail.jpg`;
-    await uploadToStorage(thumbStoragePath, thumbBuf, "image/jpeg");
 
     const completedAt = new Date().toISOString();
     await supabase
@@ -270,6 +283,10 @@ async function copyImportIfNeeded(
 
   if (!trackNeedsCopy && !bgNeedsCopy) return snapshot;
 
+  const destDir = workspacePaths.importDir(exportId);
+  assertInsideWorkspace(destDir);
+  await mkdir(destDir, { recursive: true });
+
   const COPY_CONCURRENCY = 3;
   const updatedTracks: Track[] = new Array(snapshot.tracks.length);
   let nextIdx = 0;
@@ -284,7 +301,11 @@ async function copyImportIfNeeded(
       }
       const filename = basename(track.storagePath);
       const newPath = `${prefix}${filename}`;
-      await copyFile(resolveStoragePath(track.storagePath), resolveStoragePath(newPath));
+      const src = resolveStoragePath(track.storagePath);
+      const dest = workspacePaths.importFile(exportId, filename);
+      assertInsideWorkspace(src);
+      assertInsideWorkspace(dest);
+      await copyFile(src, dest);
       updatedTracks[i] = { ...track, storagePath: newPath };
     }
   }
@@ -296,7 +317,11 @@ async function copyImportIfNeeded(
           const bg = updatedBg!;
           const filename = basename(bg.storagePath);
           const newPath = `${prefix}${filename}`;
-          await copyFile(resolveStoragePath(bg.storagePath), resolveStoragePath(newPath));
+          const src = resolveStoragePath(bg.storagePath);
+          const dest = workspacePaths.importFile(exportId, filename);
+          assertInsideWorkspace(src);
+          assertInsideWorkspace(dest);
+          await copyFile(src, dest);
           updatedBg = { ...bg, storagePath: newPath };
         })()
       : Promise.resolve();
@@ -309,8 +334,12 @@ async function copyImportIfNeeded(
   return { ...snapshot, tracks: updatedTracks, background: updatedBg };
 }
 
-async function readFileBuffer(filePath: string): Promise<Buffer> {
-  const { readFile } = await import("node:fs/promises");
-  return readFile(filePath);
+function resolveTrackPaths(tracks: Track[]): string[] {
+  return tracks.map((track) => {
+    const absPath = resolveStoragePath(track.storagePath);
+    if (!fileExists(absPath)) {
+      throw new Error(`input file not found: ${track.storagePath}`);
+    }
+    return absPath;
+  });
 }
-
