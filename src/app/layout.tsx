@@ -43,7 +43,7 @@ export default function RootLayout({
               href="/settings"
               className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
             >
-              Settings
+              Overlay
             </Link>
             <span className="hidden items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-[var(--vm-subtle)] sm:flex">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--vm-cyan)]" />

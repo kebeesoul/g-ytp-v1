@@ -118,7 +118,9 @@ export function buildPngCardOverlayLines(
       ? `,fade=t=out:st=${tFadeOutStart.toFixed(3)}:d=${preset.animation.fadeOutSec.toFixed(3)}:alpha=1`
       : "";
 
-    lines.push(`[${inputIdx}:v]${fadeInFilter}${fadeOutFilter}[${cardLabel}]`);
+    // format=rgba before fade preserves the PNG card's alpha channel; without it
+    // FFmpeg converts to yuv420p and the transparent background becomes opaque black.
+    lines.push(`[${inputIdx}:v]format=rgba,${fadeInFilter}${fadeOutFilter}[${cardLabel}]`);
     // Use gt/lt with \, escape — > and < operators fail in this FFmpeg eval version.
     // \, is converted to a literal comma by the filter graph parser before the expression evaluator sees it.
     lines.push(

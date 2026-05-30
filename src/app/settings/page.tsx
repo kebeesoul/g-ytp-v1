@@ -52,7 +52,7 @@ export default function SettingsPage() {
   const slotId = `slot-${selectedIndex + 1}`;
 
   return (
-    <div className="min-h-full bg-gray-950 px-6 py-8">
+    <div className="h-[calc(100vh-58px)] overflow-y-auto bg-gray-950 px-6 py-8">
       <div className="mx-auto max-w-4xl">
         <h1 className="mb-6 text-base font-semibold text-white">오버레이 프리셋 설정</h1>
 
