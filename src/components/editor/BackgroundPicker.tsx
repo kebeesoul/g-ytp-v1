@@ -109,8 +109,13 @@ export function BackgroundPicker({
     <div className="flex flex-col gap-2">
       <span className="text-sm font-medium text-gray-300">배경</span>
 
-      {/* Canvas 미리보기 */}
-      <div className="relative overflow-hidden rounded-md border border-gray-700 bg-gray-900">
+      {/* Canvas 미리보기 — 클릭/드래그로 업로드 가능 */}
+      <div
+        className="relative overflow-hidden rounded-md border border-gray-700 bg-gray-900 cursor-pointer"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+      >
         <canvas
           ref={canvasRef}
           width={1280}
@@ -118,8 +123,9 @@ export function BackgroundPicker({
           className="w-full"
         />
         {!value && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
-            미리보기 없음
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs text-gray-500">
+            <span>미리보기 없음</span>
+            <span className="text-gray-600">{uploading ? "업로드 중..." : "클릭 또는 드래그"}</span>
           </div>
         )}
       </div>
