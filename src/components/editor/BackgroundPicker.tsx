@@ -123,24 +123,13 @@ export function BackgroundPicker({
           className="w-full"
         />
         {!value && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs text-gray-500">
-            <span>미리보기 없음</span>
-            <span className="text-gray-600">{uploading ? "업로드 중..." : "클릭 또는 드래그"}</span>
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-600">
+            {uploading ? "업로드 중..." : "클릭 또는 드래그"}
           </div>
         )}
       </div>
 
-      {/* 업로드 Dropzone */}
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className="flex cursor-pointer items-center justify-center rounded-md border-2 border-dashed border-gray-600 py-4 text-sm text-gray-500 transition hover:border-gray-400 hover:text-gray-300"
-      >
-        {uploading ? "업로드 중..." : "이미지 / 영상 (클릭 또는 드래그)"}
-      </div>
-
-      <input
+<input
         ref={fileInputRef}
         type="file"
         accept="image/*,video/*"
