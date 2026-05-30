@@ -186,7 +186,11 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   }
 
   if (waveform.style !== "off") {
-    filterScript = `${filterScript};\n${buildWaveformFilter(waveform.style, visualOutputLabel)}`;
+    const waveFile = join(process.cwd(), "public", "waveforms", `${waveform.style}.mov`);
+    // Input index: 0=bg, 1=audio, 2..N=PNG cards (4 tokens each = -loop 1 -i <path>)
+    const waveInputIdx = 2 + extraInputs.length / 4;
+    extraInputs = [...extraInputs, "-stream_loop", "-1", "-i", waveFile];
+    filterScript = `${filterScript};\n[${visualOutputLabel}][${waveInputIdx}:v]overlay=x=(W-w)/2:y=H-h-60:shortest=1[vout]`;
   }
 
   const filterScriptPath = join(workDir, "filters.txt");
@@ -290,58 +294,3 @@ function buildFilterScript(
   return `${bgFilter};\n${chain}`;
 }
 
-function buildWaveformFilter(
-  style: ProjectSnapshot["renderConfig"]["waveform"]["style"],
-  baseLabel: string
-): string {
-  const presets: Record<Exclude<typeof style, "off">, {
-    size: string;
-    mode: string;
-    scale: string;
-    draw: string;
-    n: number;
-    opacity: number;
-    x: number;
-    bottom: number;
-  }> = {
-    bars: {
-      size: "210x62",
-      mode: "cline",
-      scale: "sqrt",
-      draw: "full",
-      n: 1800,
-      opacity: 0.9,
-      x: 92,
-      bottom: 78,
-    },
-    line: {
-      size: "238x44",
-      mode: "p2p",
-      scale: "cbrt",
-      draw: "scale",
-      n: 1200,
-      opacity: 0.78,
-      x: 92,
-      bottom: 90,
-    },
-    dots: {
-      size: "188x72",
-      mode: "point",
-      scale: "sqrt",
-      draw: "full",
-      n: 2100,
-      opacity: 0.86,
-      x: 104,
-      bottom: 74,
-    },
-  };
-  const preset = style === "off" ? presets.bars : presets[style];
-
-  return (
-    `[1:a]showwaves=s=${preset.size}:mode=${preset.mode}:n=${preset.n}:` +
-    `scale=${preset.scale}:draw=${preset.draw}:colors=0xFFFFFF:rate=15,` +
-    `format=rgba,colorkey=0x000000:0.08:0.0,` +
-    `colorchannelmixer=aa=${preset.opacity.toFixed(2)}[_waveform];\n` +
-    `[${baseLabel}][_waveform]overlay=x=(W-w)/2:y=H-h-${preset.bottom}:shortest=1[vout]`
-  );
-}

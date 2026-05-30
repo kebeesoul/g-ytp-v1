@@ -115,7 +115,7 @@ export type ThumbnailConfig = z.infer<typeof ThumbnailConfigSchema>;
 
 // ─── 웨이브 파형 설정 ───────────────────────────────────────────────────────
 export const WaveformConfigSchema = z.object({
-  style: z.enum(["off", "bars", "line", "dots"]).default("off"),
+  style: z.enum(["off", "wave1", "wave2", "wave3", "wave4"]).default("off"),
 });
 export type WaveformConfig = z.infer<typeof WaveformConfigSchema>;
 

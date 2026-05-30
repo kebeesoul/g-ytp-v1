@@ -481,9 +481,10 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
                 <span className="vm-label">Waveform</span>
                 <div className="flex flex-wrap gap-2">
                   {([
-                    ["bars", "Wave 1"],
-                    ["line", "Wave 2"],
-                    ["dots", "Wave 3"],
+                    ["wave1", "Wave 1"],
+                    ["wave2", "Wave 2"],
+                    ["wave3", "Wave 3"],
+                    ["wave4", "Wave 4"],
                     ["off", "None"],
                   ] as const).map(([style, label]) => (
                     <label key={style} className="flex items-center gap-2 border border-[var(--vm-border)] bg-[#0b0b0b] px-3 py-2 text-xs text-[var(--vm-text)]">
