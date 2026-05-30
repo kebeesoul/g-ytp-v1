@@ -190,7 +190,10 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     // Input index: 0=bg, 1=audio, 2..N=PNG cards (4 tokens each = -loop 1 -i <path>)
     const waveInputIdx = 2 + extraInputs.length / 4;
     extraInputs = [...extraInputs, "-stream_loop", "-1", "-i", waveFile];
-    filterScript = `${filterScript};\n[${visualOutputLabel}][${waveInputIdx}:v]overlay=x=(W-w)/2:y=H-h-60:shortest=1[vout]`;
+    filterScript =
+      `${filterScript};\n` +
+      `[${waveInputIdx}:v]format=rgba,scale=420:420[_wave];\n` +
+      `[${visualOutputLabel}][_wave]overlay=x=(W-w)/2:y=H*0.85-h/2:format=auto:shortest=1[vout]`;
   }
 
   const filterScriptPath = join(workDir, "filters.txt");
@@ -293,4 +296,3 @@ function buildFilterScript(
   const chain = `[_bgproc]${overlayFilters.join(",")}[${finalLabel}]`;
   return `${bgFilter};\n${chain}`;
 }
-
