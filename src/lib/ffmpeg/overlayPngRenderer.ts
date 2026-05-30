@@ -122,7 +122,7 @@ export function buildPngCardOverlayLines(
     // Use gt/lt with \, escape — > and < operators fail in this FFmpeg eval version.
     // \, is converted to a literal comma by the filter graph parser before the expression evaluator sees it.
     lines.push(
-      `[${prevLabel}][${cardLabel}]overlay=enable=gt(t\\,${tStart.toFixed(3)})*lt(t\\,${tEnd.toFixed(3)})[${nextLabel}]`
+      `[${prevLabel}][${cardLabel}]overlay=format=auto:enable=gt(t\\,${tStart.toFixed(3)})*lt(t\\,${tEnd.toFixed(3)})[${nextLabel}]`
     );
     prevLabel = nextLabel;
   }
