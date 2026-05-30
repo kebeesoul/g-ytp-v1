@@ -82,11 +82,11 @@ async function generateSinglePng(
     args: [
       "-y",
       "-f", "lavfi",
-      "-i", "color=c=black@0.0:s=1920x1080",
+      "-i", "nullsrc=s=1920x1080,format=rgba,colorchannelmixer=aa=0",
       "-vframes", "1",
-      // format=rgba before drawtext prevents yuv420p conversion that strips alpha.
+      // nullsrc plus aa=0 avoids color's opaque-black default alpha in PNG output.
       // -pix_fmt rgba ensures the PNG is saved as RGBA (transparent background).
-      "-vf", `format=rgba,${artistFilter},${titleFilter}`,
+      "-vf", `${artistFilter},${titleFilter}`,
       "-pix_fmt", "rgba",
       outputPath,
     ],
