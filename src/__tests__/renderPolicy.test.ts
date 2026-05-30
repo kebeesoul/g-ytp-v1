@@ -384,7 +384,7 @@ describe("Layer B — DB 상태 원천 (try/catch/finally 구조)", () => {
       new URL("../lib/ffmpeg/renderVideo.ts", import.meta.url),
       "utf8"
     );
-    expect(code).toContain("scale=420:420");
+    expect(code).toContain("scale=240:240");
     expect(code).toContain("y=H*0.85-h/2");
     expect(code).toContain('waveform.style !== "off"');
   });
