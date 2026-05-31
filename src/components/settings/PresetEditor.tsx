@@ -153,13 +153,21 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
         <Field label="아티스트 폰트">
           <FontSelect
             value={draft.typography.artistFontFamily}
-            onChange={(v) => set("typography", "artistFontFamily", v)}
+            onChange={(v) => {
+              set("typography", "artistFontFamily", v);
+              const font = FONTS.find((f) => f.name === v);
+              if (font) set("typography", "artistWeight", parseInt(font.weight, 10));
+            }}
           />
         </Field>
         <Field label="제목 폰트">
           <FontSelect
             value={draft.typography.titleFontFamily}
-            onChange={(v) => set("typography", "titleFontFamily", v)}
+            onChange={(v) => {
+              set("typography", "titleFontFamily", v);
+              const font = FONTS.find((f) => f.name === v);
+              if (font) set("typography", "titleWeight", parseInt(font.weight, 10));
+            }}
           />
         </Field>
       </Section>
