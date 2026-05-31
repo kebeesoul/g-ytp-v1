@@ -128,7 +128,7 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
             <ScrubInput value={draft.layout.y} onChange={(v) => set("layout", "y", v)} step={2} />
             <button
               type="button"
-              onClick={() => set("layout", "y", -270)}
+              onClick={() => set("layout", "y", -760)}
               className="mt-1 w-full rounded py-1 text-xs bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
             >
               Y 센터
@@ -147,7 +147,7 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
             <ScrubInput value={draft.typography.titleFontSize} onChange={(v) => set("typography", "titleFontSize", v)} min={8} max={120} />
           </Field>
           <Field label="행간">
-            <ScrubInput value={draft.typography.lineHeight} onChange={(v) => set("typography", "lineHeight", v)} min={0} max={200} step={1} />
+            <ScrubInput value={draft.typography.lineHeight} onChange={(v) => set("typography", "lineHeight", v)} min={-100} max={200} step={1} />
           </Field>
           <Field label="자간">
             <ScrubInput value={draft.typography.letterSpacing} onChange={(v) => set("typography", "letterSpacing", v)} step={0.5} />
@@ -173,7 +173,14 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
               if (font) set("typography", "artistWeight", parseInt(font.weight, 10));
             }}
           />
-          <WeightSelect value={draft.typography.artistWeight} onChange={(v) => set("typography", "artistWeight", v)} />
+          <StyleToggle
+            bold={draft.typography.artistWeight >= 700}
+            italic={draft.typography.artistItalic}
+            underline={draft.typography.artistUnderline}
+            onBold={(v) => set("typography", "artistWeight", v ? 700 : 400)}
+            onItalic={(v) => set("typography", "artistItalic", v)}
+            onUnderline={(v) => set("typography", "artistUnderline", v)}
+          />
         </Field>
         <Field label="제목 폰트">
           <FontSelect
@@ -184,7 +191,14 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
               if (font) set("typography", "titleWeight", parseInt(font.weight, 10));
             }}
           />
-          <WeightSelect value={draft.typography.titleWeight} onChange={(v) => set("typography", "titleWeight", v)} />
+          <StyleToggle
+            bold={draft.typography.titleWeight >= 700}
+            italic={draft.typography.titleItalic}
+            underline={draft.typography.titleUnderline}
+            onBold={(v) => set("typography", "titleWeight", v ? 700 : 400)}
+            onItalic={(v) => set("typography", "titleItalic", v)}
+            onUnderline={(v) => set("typography", "titleUnderline", v)}
+          />
         </Field>
       </Section>
 
@@ -415,6 +429,8 @@ export function PresetPreview({
               fontFamily: artistCss,
               fontSize: draft.typography.artistFontSize * PREVIEW_SCALE,
               fontWeight: draft.typography.artistWeight,
+              fontStyle: draft.typography.artistItalic ? "italic" : "normal",
+              textDecoration: draft.typography.artistUnderline ? "underline" : "none",
               color: draft.color.artist,
               whiteSpace: "nowrap",
               textAlign: draft.typography.textAlign,
@@ -428,6 +444,8 @@ export function PresetPreview({
               fontFamily: titleCss,
               fontSize: draft.typography.titleFontSize * PREVIEW_SCALE,
               fontWeight: draft.typography.titleWeight,
+              fontStyle: draft.typography.titleItalic ? "italic" : "normal",
+              textDecoration: draft.typography.titleUnderline ? "underline" : "none",
               color: draft.color.title,
               whiteSpace: "nowrap",
               textAlign: draft.typography.textAlign,
@@ -499,29 +517,27 @@ function FontSelect({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
-const WEIGHT_OPTIONS = [
-  { label: "Thin", value: 300 },
-  { label: "Mid", value: 500 },
-  { label: "Bold", value: 700 },
-] as const;
-
-function WeightSelect({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function StyleToggle({
+  bold, italic, underline, onBold, onItalic, onUnderline,
+}: {
+  bold: boolean; italic: boolean; underline: boolean;
+  onBold: (v: boolean) => void; onItalic: (v: boolean) => void; onUnderline: (v: boolean) => void;
+}) {
+  const btnCls = (active: boolean) =>
+    `flex-1 rounded py-1 text-xs font-medium transition-colors ${
+      active ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+    }`;
   return (
     <div className="flex gap-1">
-      {WEIGHT_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`flex-1 rounded py-1 text-xs transition-colors ${
-            value === opt.value
-              ? "bg-blue-600 text-white"
-              : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
+      <button type="button" onClick={() => onBold(!bold)} className={btnCls(bold)}>
+        <span className="font-bold">B</span>
+      </button>
+      <button type="button" onClick={() => onItalic(!italic)} className={btnCls(italic)}>
+        <span className="italic">I</span>
+      </button>
+      <button type="button" onClick={() => onUnderline(!underline)} className={btnCls(underline)}>
+        <span className="underline">U</span>
+      </button>
     </div>
   );
 }
