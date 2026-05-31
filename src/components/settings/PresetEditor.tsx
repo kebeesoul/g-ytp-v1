@@ -116,9 +116,23 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
         <div className="grid grid-cols-2 gap-3">
           <Field label="X 오프셋">
             <ScrubInput value={draft.layout.x} onChange={(v) => set("layout", "x", v)} step={2} />
+            <button
+              type="button"
+              onClick={() => set("layout", "x", 960)}
+              className="mt-1 w-full rounded py-1 text-xs bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
+            >
+              X 센터
+            </button>
           </Field>
           <Field label="Y 오프셋">
             <ScrubInput value={draft.layout.y} onChange={(v) => set("layout", "y", v)} step={2} />
+            <button
+              type="button"
+              onClick={() => set("layout", "y", 540)}
+              className="mt-1 w-full rounded py-1 text-xs bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
+            >
+              Y 센터
+            </button>
           </Field>
         </div>
       </Section>
