@@ -235,9 +235,12 @@ function ScrubInput({
   max?: number;
   step?: number;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const startY = useRef(0);
   const startVal = useRef(0);
-  const active = useRef(false);
+  const hasDragged = useRef(false);
 
   function clamp(v: number) {
     let out = v;
@@ -251,24 +254,56 @@ function ScrubInput({
     return Math.round(v * inv) / inv;
   }
 
+  function commitInput(raw: string) {
+    const v = parseFloat(raw);
+    if (!isNaN(v)) onChange(clamp(snap(v)));
+    setEditing(false);
+  }
+
   const display = step < 0.1 ? value.toFixed(2) : step < 1 ? value.toFixed(1) : String(value);
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        value={inputVal}
+        step={step}
+        autoFocus
+        onChange={(e) => setInputVal(e.target.value)}
+        onBlur={(e) => commitInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commitInput((e.target as HTMLInputElement).value);
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className={inputCls}
+      />
+    );
+  }
 
   return (
     <div
       className={`${inputCls} flex cursor-ns-resize select-none items-center justify-between`}
       onPointerDown={(e) => {
-        e.preventDefault();
-        active.current = true;
+        hasDragged.current = false;
         startY.current = e.clientY;
         startVal.current = value;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       }}
       onPointerMove={(e) => {
-        if (!active.current) return;
-        const delta = startY.current - e.clientY; // drag up = increase
+        if (!(e.buttons & 1)) return;
+        if (!hasDragged.current && Math.abs(e.clientY - startY.current) < 3) return;
+        hasDragged.current = true;
+        const delta = startY.current - e.clientY;
         onChange(clamp(snap(startVal.current + delta * step)));
       }}
-      onPointerUp={() => { active.current = false; }}
+      onPointerUp={() => {
+        if (!hasDragged.current) {
+          // click without drag → enter edit mode
+          setInputVal(display);
+          setEditing(true);
+        }
+      }}
     >
       <span className="text-[10px] text-gray-600">↕</span>
       <span className="font-mono">{display}</span>
