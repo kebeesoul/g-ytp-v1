@@ -150,7 +150,7 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
             <ScrubInput value={draft.typography.lineHeight} onChange={(v) => set("typography", "lineHeight", v)} min={-100} max={200} step={1} />
           </Field>
           <Field label="자간">
-            <ScrubInput value={draft.typography.letterSpacing} onChange={(v) => set("typography", "letterSpacing", v)} step={0.5} />
+            <ScrubInput value={draft.typography.letterSpacing} onChange={(v) => set("typography", "letterSpacing", v)} step={1} />
           </Field>
           <Field label="정렬">
             <select
