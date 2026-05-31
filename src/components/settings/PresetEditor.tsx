@@ -159,6 +159,7 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
               if (font) set("typography", "artistWeight", parseInt(font.weight, 10));
             }}
           />
+          <WeightSelect value={draft.typography.artistWeight} onChange={(v) => set("typography", "artistWeight", v)} />
         </Field>
         <Field label="제목 폰트">
           <FontSelect
@@ -169,6 +170,7 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
               if (font) set("typography", "titleWeight", parseInt(font.weight, 10));
             }}
           />
+          <WeightSelect value={draft.typography.titleWeight} onChange={(v) => set("typography", "titleWeight", v)} />
         </Field>
       </Section>
 
@@ -480,6 +482,33 @@ function FontSelect({ value, onChange }: { value: string; onChange: (v: string) 
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+const WEIGHT_OPTIONS = [
+  { label: "Thin", value: 300 },
+  { label: "Mid", value: 500 },
+  { label: "Bold", value: 700 },
+] as const;
+
+function WeightSelect({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex gap-1">
+      {WEIGHT_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`flex-1 rounded py-1 text-xs transition-colors ${
+            value === opt.value
+              ? "bg-blue-600 text-white"
+              : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
