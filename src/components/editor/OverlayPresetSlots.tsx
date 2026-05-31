@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import type { OverlayPreset } from "@/lib/schema";
 
@@ -11,6 +12,8 @@ interface OverlayPresetSlotsProps {
 }
 
 export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPresetSlotsProps) {
+  const router = useRouter();
+
   return (
     <div className="flex flex-col gap-2 rounded-md border border-gray-700 bg-gray-900 p-4">
       <div className="flex items-center justify-between">
@@ -29,7 +32,7 @@ export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPre
             return (
               <Link
                 key={slotId}
-                href="/settings"
+                href={`/settings?slot=${i + 1}`}
                 className="flex flex-col items-center gap-1 rounded-md border border-dashed border-gray-700 p-2 text-center hover:border-gray-500"
               >
                 <div className="flex h-9 w-full items-center justify-center rounded bg-gray-800 text-lg text-gray-700">
@@ -46,6 +49,8 @@ export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPre
             <button
               key={slotId}
               onClick={() => onChange(preset.id)}
+              onDoubleClick={() => router.push(`/settings?slot=${i + 1}`)}
+              title="더블클릭으로 편집"
               className={`flex flex-col items-center gap-1 rounded-md border p-2 text-center transition-colors ${
                 isSelected
                   ? "border-blue-500 bg-blue-500/10"

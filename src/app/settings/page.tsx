@@ -41,6 +41,15 @@ export default function SettingsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pre-select slot from URL param (?slot=N)
+  useEffect(() => {
+    const slot = new URLSearchParams(window.location.search).get("slot");
+    if (slot) {
+      const n = parseInt(slot, 10) - 1;
+      if (n >= 0 && n < 6) setSelectedIndex(n);
+    }
+  }, []);
+
   function handleSaved(preset: OverlayPreset) {
     setPresets((prev) => {
       const next = [...prev];

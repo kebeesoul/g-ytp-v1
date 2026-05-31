@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { OverlayPresetSchema, type OverlayPreset } from "@/lib/schema";
+import { FONTS } from "@/lib/thumbnail/constants";
 
 interface PresetEditorProps {
   slotId: string; // "slot-1" ~ "slot-6"
@@ -37,6 +38,19 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
   useEffect(() => {
     setSaved(false);
   }, [slotId]);
+
+  // Load Google Fonts for the preview
+  useEffect(() => {
+    const googleKeys = FONTS.filter((f) => f.googleKey).map((f) => f.googleKey!);
+    const url = `https://fonts.googleapis.com/css2?${googleKeys.map((k) => `family=${k}`).join("&")}&display=swap`;
+    if (!document.querySelector("link[data-gf-overlay]")) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = url;
+      link.dataset.gfOverlay = "1";
+      document.head.appendChild(link);
+    }
+  }, []);
 
   function set<K extends keyof OverlayPreset>(
     section: K,
@@ -81,6 +95,8 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
   }
 
   return (
+    <div className="flex flex-col gap-5">
+      <PresetPreview draft={draft} />
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {/* Memo / Name */}
       <Section title="기본">
@@ -164,19 +180,15 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
           </Field>
         </div>
         <Field label="아티스트 폰트">
-          <input
-            type="text"
+          <FontSelect
             value={draft.typography.artistFontFamily}
-            onChange={(e) => set("typography", "artistFontFamily", e.target.value)}
-            className={inputCls}
+            onChange={(v) => set("typography", "artistFontFamily", v)}
           />
         </Field>
         <Field label="제목 폰트">
-          <input
-            type="text"
+          <FontSelect
             value={draft.typography.titleFontFamily}
-            onChange={(e) => set("typography", "titleFontFamily", e.target.value)}
-            className={inputCls}
+            onChange={(v) => set("typography", "titleFontFamily", v)}
           />
         </Field>
       </Section>
@@ -255,6 +267,7 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
         {saving ? "저장 중..." : saved ? "저장됨 ✓" : "저장"}
       </button>
     </form>
+    </div>
   );
 }
 
@@ -307,6 +320,145 @@ function NumInput({
       }}
       className={inputCls}
     />
+  );
+}
+
+// ─── PresetPreview ────────────────────────────────────────────────────────────
+
+const PREVIEW_SCALE = 480 / 1920; // 1/4 of full 1920×1080
+
+function PresetPreview({ draft }: { draft: OverlayPreset }) {
+  const titleLineH = Math.ceil(
+    draft.typography.titleFontSize * draft.typography.lineHeight
+  );
+  // FFmpeg: y<0 means bottom-relative (h+y), so title top y in 1080p frame
+  const yAbsolute = draft.layout.y < 0 ? 1080 + draft.layout.y : draft.layout.y;
+  const yArtistAbsolute = yAbsolute - titleLineH;
+
+  const xPx = Math.max(0, draft.layout.x * PREVIEW_SCALE);
+  const yArtistPx = yArtistAbsolute * PREVIEW_SCALE;
+
+  const artistFont = FONTS.find((f) => f.name === draft.typography.artistFontFamily);
+  const titleFont = FONTS.find((f) => f.name === draft.typography.titleFontFamily);
+  const artistCss = artistFont?.family ?? draft.typography.artistFontFamily;
+  const titleCss = titleFont?.family ?? draft.typography.titleFontFamily;
+
+  const cardStyle: React.CSSProperties = draft.card.enabled
+    ? {
+        background: draft.color.background ?? "rgba(0,0,0,0.55)",
+        borderRadius: draft.card.radius * PREVIEW_SCALE,
+        padding: `${draft.card.paddingY * PREVIEW_SCALE}px ${draft.card.paddingX * PREVIEW_SCALE}px`,
+        opacity: draft.card.opacity,
+      }
+    : {};
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-md"
+      style={{
+        width: 480,
+        height: 270,
+        background: "linear-gradient(135deg,#1a1a2e 0%,#0f3460 55%,#16213e 100%)",
+        flexShrink: 0,
+      }}
+    >
+      {/* Scale label */}
+      <span className="absolute top-1.5 right-2 text-[9px] text-white/30 select-none">
+        미리보기 (1/4)
+      </span>
+      {/* Text block */}
+      <div
+        style={{
+          position: "absolute",
+          left: xPx,
+          top: Math.max(0, yArtistPx),
+        }}
+      >
+        <div style={cardStyle}>
+          <div
+            style={{
+              fontFamily: artistCss,
+              fontSize: draft.typography.artistFontSize * PREVIEW_SCALE,
+              fontWeight: draft.typography.artistWeight,
+              color: draft.color.artist,
+              whiteSpace: "nowrap",
+              textAlign: draft.typography.textAlign,
+            }}
+          >
+            Artist Name
+          </div>
+          <div
+            style={{
+              fontFamily: titleCss,
+              fontSize: draft.typography.titleFontSize * PREVIEW_SCALE,
+              fontWeight: draft.typography.titleWeight,
+              color: draft.color.title,
+              whiteSpace: "nowrap",
+              textAlign: draft.typography.textAlign,
+              marginTop: 2,
+            }}
+          >
+            Track Title
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── FontSelect ───────────────────────────────────────────────────────────────
+
+function FontSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selected = FONTS.find((f) => f.name === value);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`${inputCls} flex items-center justify-between gap-2`}
+      >
+        <span style={{ fontFamily: selected?.family ?? undefined }}>
+          {selected?.label ?? value}
+        </span>
+        {selected && (
+          <span className="shrink-0 text-[10px] text-gray-500">{selected.tag}</span>
+        )}
+        <span className="shrink-0 text-gray-500">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-md border border-gray-600 bg-gray-800 shadow-xl">
+          {FONTS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => { onChange(f.name); setOpen(false); }}
+              className={`w-full px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-gray-700 transition-colors ${
+                value === f.name ? "bg-blue-500/20 text-blue-300" : "text-white"
+              }`}
+            >
+              <span style={{ fontFamily: f.family }} className="text-sm">
+                {f.label}
+              </span>
+              <span className="shrink-0 text-[10px] text-gray-500">{f.tag}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
