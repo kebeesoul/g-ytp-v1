@@ -8,6 +8,7 @@ interface PresetEditorProps {
   slotId: string; // "slot-1" ~ "slot-6"
   preset: OverlayPreset | null;
   onSaved: (preset: OverlayPreset) => void;
+  onDraftChange?: (draft: OverlayPreset) => void;
 }
 
 const ANCHOR_OPTIONS = [
@@ -20,7 +21,7 @@ function defaultDraft(slotId: string): OverlayPreset {
   return OverlayPresetSchema.parse({ id: slotId, version: 1 });
 }
 
-export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
+export function PresetEditor({ slotId, preset, onSaved, onDraftChange }: PresetEditorProps) {
   const [name, setName] = useState("");
   const [draft, setDraft] = useState<OverlayPreset>(() => preset ?? defaultDraft(slotId));
   const [saving, setSaving] = useState(false);
@@ -29,9 +30,12 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
 
   // Sync draft/name when slot changes or preset is updated from outside (e.g. after save)
   useEffect(() => {
-    setDraft(preset ?? defaultDraft(slotId));
+    const d = preset ?? defaultDraft(slotId);
+    setDraft(d);
     setName(preset?.animation.animMemo ?? "");
     setError(null);
+    onDraftChange?.(d);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slotId, preset]);
 
   // Reset saved indicator only when navigating to a different slot
@@ -57,10 +61,11 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
     key: keyof OverlayPreset[K],
     value: unknown
   ) {
-    setDraft((prev) => ({
-      ...prev,
-      [section]: { ...(prev[section] as object), [key]: value },
-    }));
+    setDraft((prev) => {
+      const next = { ...prev, [section]: { ...(prev[section] as object), [key]: value } };
+      onDraftChange?.(next);
+      return next;
+    });
     setSaved(false);
   }
 
@@ -95,8 +100,6 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <PresetPreview draft={draft} />
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {/* Memo / Name */}
       <Section title="기본">
@@ -220,7 +223,6 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
         {saving ? "저장 중..." : saved ? "저장됨 ✓" : "저장"}
       </button>
     </form>
-    </div>
   );
 }
 
@@ -280,7 +282,7 @@ function NumInput({
 
 const PREVIEW_SCALE = 480 / 1920; // 1/4 of full 1920×1080
 
-function PresetPreview({ draft }: { draft: OverlayPreset }) {
+export function PresetPreview({ draft }: { draft: OverlayPreset }) {
   const titleLineH = Math.ceil(
     draft.typography.titleFontSize * draft.typography.lineHeight
   );
