@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { OverlayPresetSchema, type OverlayPreset } from "@/lib/schema";
 import { FONTS } from "@/lib/thumbnail/constants";
 
@@ -18,6 +19,7 @@ function defaultDraft(slotId: string): OverlayPreset {
 }
 
 export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegisterPositionSync }: PresetEditorProps) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [draft, setDraft] = useState<OverlayPreset>(() => preset ?? defaultDraft(slotId));
   const [saving, setSaving] = useState(false);
@@ -101,6 +103,14 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
       setDraft(updated);
       onSaved(updated);
       setSaved(true);
+
+      // Update editor draft localStorage to pre-select this slot, then navigate
+      try {
+        const raw = window.localStorage.getItem("gytp:editor-draft");
+        const editorDraft = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        window.localStorage.setItem("gytp:editor-draft", JSON.stringify({ ...editorDraft, overlayPresetId: slotId }));
+      } catch {}
+      setTimeout(() => router.push("/editor"), 600);
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장 실패");
     } finally {
@@ -110,6 +120,20 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      {/* Slot name */}
+      <Field label="슬롯 이름">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            set("animation", "animMemo", e.target.value || undefined);
+          }}
+          placeholder={`슬롯 ${slotId.split("-")[1]}`}
+          className={inputCls}
+        />
+      </Field>
+
       {/* Layout — X/Y only; position can also be set by dragging the preview */}
       <Section title="위치">
         <p className="text-[10px] text-gray-600">미리보기에서 텍스트를 드래그하면 위치가 바뀝니다</p>
