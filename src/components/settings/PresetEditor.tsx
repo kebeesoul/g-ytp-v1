@@ -118,7 +118,7 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
             <ScrubInput value={draft.layout.x} onChange={(v) => set("layout", "x", v)} step={2} />
             <button
               type="button"
-              onClick={() => set("layout", "x", 960)}
+              onClick={() => set("layout", "x", 480)}
               className="mt-1 w-full rounded py-1 text-xs bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
             >
               X 센터
@@ -128,7 +128,7 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
             <ScrubInput value={draft.layout.y} onChange={(v) => set("layout", "y", v)} step={2} />
             <button
               type="button"
-              onClick={() => set("layout", "y", 540)}
+              onClick={() => set("layout", "y", -270)}
               className="mt-1 w-full rounded py-1 text-xs bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
             >
               Y 센터
@@ -146,8 +146,8 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
           <Field label="제목 폰트 크기">
             <ScrubInput value={draft.typography.titleFontSize} onChange={(v) => set("typography", "titleFontSize", v)} min={8} max={120} />
           </Field>
-          <Field label="줄 높이">
-            <ScrubInput value={draft.typography.lineHeight} onChange={(v) => set("typography", "lineHeight", v)} min={0.5} max={3} step={0.05} />
+          <Field label="행간">
+            <ScrubInput value={draft.typography.lineHeight} onChange={(v) => set("typography", "lineHeight", v)} min={0} max={200} step={1} />
           </Field>
           <Field label="자간">
             <ScrubInput value={draft.typography.letterSpacing} onChange={(v) => set("typography", "letterSpacing", v)} step={0.5} />
@@ -346,14 +346,11 @@ export function PresetPreview({
   draft: OverlayPreset;
   onPositionChange?: (x: number, y: number) => void;
 }) {
-  const titleLineH = Math.ceil(
-    draft.typography.titleFontSize * draft.typography.lineHeight
-  );
+  const rowGapPx = draft.typography.lineHeight * PREVIEW_SCALE;
   const yAbsolute = draft.layout.y < 0 ? 1080 + draft.layout.y : draft.layout.y;
-  const yArtistAbsolute = yAbsolute - titleLineH;
 
   const xPx = Math.max(0, draft.layout.x * PREVIEW_SCALE);
-  const yArtistPx = yArtistAbsolute * PREVIEW_SCALE;
+  const yArtistPx = yAbsolute * PREVIEW_SCALE;
 
   const artistFont = FONTS.find((f) => f.name === draft.typography.artistFontFamily);
   const titleFont = FONTS.find((f) => f.name === draft.typography.titleFontFamily);
@@ -421,6 +418,7 @@ export function PresetPreview({
               color: draft.color.artist,
               whiteSpace: "nowrap",
               textAlign: draft.typography.textAlign,
+              letterSpacing: `${draft.typography.letterSpacing * PREVIEW_SCALE}px`,
             }}
           >
             Artist Name
@@ -433,7 +431,8 @@ export function PresetPreview({
               color: draft.color.title,
               whiteSpace: "nowrap",
               textAlign: draft.typography.textAlign,
-              marginTop: 2,
+              letterSpacing: `${draft.typography.letterSpacing * PREVIEW_SCALE}px`,
+              marginTop: rowGapPx,
             }}
           >
             Track Title
