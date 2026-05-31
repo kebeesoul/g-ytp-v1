@@ -134,12 +134,6 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
           <Field label="Y 오프셋">
             <NumInput value={draft.layout.y} onChange={(v) => set("layout", "y", v)} />
           </Field>
-          <Field label="Safe Margin X">
-            <NumInput value={draft.layout.safeMarginX} onChange={(v) => set("layout", "safeMarginX", v)} min={0} />
-          </Field>
-          <Field label="Safe Margin Y">
-            <NumInput value={draft.layout.safeMarginY} onChange={(v) => set("layout", "safeMarginY", v)} min={0} />
-          </Field>
         </div>
       </Section>
 
@@ -152,20 +146,11 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
           <Field label="제목 폰트 크기">
             <NumInput value={draft.typography.titleFontSize} onChange={(v) => set("typography", "titleFontSize", v)} min={8} />
           </Field>
-          <Field label="아티스트 굵기">
-            <NumInput value={draft.typography.artistWeight} onChange={(v) => set("typography", "artistWeight", v)} min={100} max={900} step={100} />
-          </Field>
-          <Field label="제목 굵기">
-            <NumInput value={draft.typography.titleWeight} onChange={(v) => set("typography", "titleWeight", v)} min={100} max={900} step={100} />
-          </Field>
           <Field label="줄 높이">
             <NumInput value={draft.typography.lineHeight} onChange={(v) => set("typography", "lineHeight", v)} min={0.5} max={3} step={0.05} />
           </Field>
           <Field label="자간">
             <NumInput value={draft.typography.letterSpacing} onChange={(v) => set("typography", "letterSpacing", v)} step={0.1} />
-          </Field>
-          <Field label="최대 줄 수 (제목)">
-            <NumInput value={draft.typography.maxLinesTitle} onChange={(v) => set("typography", "maxLinesTitle", v)} min={1} max={10} />
           </Field>
           <Field label="정렬">
             <select
@@ -209,38 +194,6 @@ export function PresetEditor({ slotId, preset, onSaved }: PresetEditorProps) {
             <ColorInput value={draft.color.shadow ?? "#000000"} onChange={(v) => set("color", "shadow", v)} />
           </Field>
         </div>
-      </Section>
-
-      {/* Card */}
-      <Section title="카드 배경">
-        <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={draft.card.enabled}
-            onChange={(e) => set("card", "enabled", e.target.checked)}
-            className="rounded"
-          />
-          카드 배경 사용
-        </label>
-        {draft.card.enabled && (
-          <div className="grid grid-cols-2 gap-3 mt-2">
-            <Field label="Padding X">
-              <NumInput value={draft.card.paddingX} onChange={(v) => set("card", "paddingX", v)} min={0} />
-            </Field>
-            <Field label="Padding Y">
-              <NumInput value={draft.card.paddingY} onChange={(v) => set("card", "paddingY", v)} min={0} />
-            </Field>
-            <Field label="Radius">
-              <NumInput value={draft.card.radius} onChange={(v) => set("card", "radius", v)} min={0} />
-            </Field>
-            <Field label="Blur">
-              <NumInput value={draft.card.blur} onChange={(v) => set("card", "blur", v)} min={0} />
-            </Field>
-            <Field label="Opacity">
-              <NumInput value={draft.card.opacity} onChange={(v) => set("card", "opacity", v)} min={0} max={1} step={0.05} />
-            </Field>
-          </div>
-        )}
       </Section>
 
       {/* Animation */}
