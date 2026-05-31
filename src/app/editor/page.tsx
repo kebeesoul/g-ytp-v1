@@ -490,6 +490,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
               editorSessionId={editorSessionId}
               value={background}
               onChange={setBackground}
+              overlayPreview={presets.find((p) => p?.id === overlayPresetId) ?? null}
             />
 
             <OverlayPresetSlots

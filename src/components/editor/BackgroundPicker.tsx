@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { BackgroundSchema } from "@/lib/schema";
-import type { Background } from "@/lib/schema";
+import type { Background, OverlayPreset } from "@/lib/schema";
+import { FONTS } from "@/lib/thumbnail/constants";
 
 interface BackgroundPickerProps {
   editorSessionId: string;
   value: Background | null;
   onChange: (bg: Background | null) => void;
+  overlayPreview?: OverlayPreset | null;
 }
 
 const DIM_DEFAULT = 0.25;
@@ -16,15 +18,30 @@ export function BackgroundPicker({
   editorSessionId,
   value,
   onChange,
+  overlayPreview,
 }: BackgroundPickerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const [canvasDisplayWidth, setCanvasDisplayWidth] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [showCropEditor, setShowCropEditor] = useState(false);
 
   const hasImage = value?.kind === "image" && imgNaturalSize !== null;
+
+  // Track canvas display width for overlay scaling
+  useEffect(() => {
+    const el = canvasWrapperRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      setCanvasDisplayWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    ro.observe(el);
+    setCanvasDisplayWidth(el.offsetWidth);
+    return () => ro.disconnect();
+  }, []);
 
   // 미리보기 Canvas 렌더링
   useEffect(() => {
@@ -111,6 +128,7 @@ export function BackgroundPicker({
 
       {/* Canvas 미리보기 — 클릭/드래그로 업로드 가능 */}
       <div
+        ref={canvasWrapperRef}
         className="relative overflow-hidden rounded-md border border-gray-700 bg-gray-900 cursor-pointer"
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
@@ -127,6 +145,9 @@ export function BackgroundPicker({
             <span className="text-xs text-gray-500">{uploading ? "업로드 중..." : "이미지 / 영상"}</span>
             {!uploading && <span className="text-xs text-gray-600">클릭 또는 드래그</span>}
           </div>
+        )}
+        {overlayPreview && canvasDisplayWidth > 0 && (
+          <OverlayMock preset={overlayPreview} scale={canvasDisplayWidth / 1920} />
         )}
       </div>
 
@@ -180,6 +201,64 @@ export function BackgroundPicker({
           onClose={() => setShowCropEditor(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Overlay Mock ─────────────────────────────────────────────────────────────
+
+function OverlayMock({ preset, scale }: { preset: OverlayPreset; scale: number }) {
+  const { layout, typography, color } = preset;
+  const yAbsolute = layout.y < 0 ? 1080 + layout.y : layout.y;
+  const rowGapPx = typography.lineHeight * scale;
+
+  const artistFont = FONTS.find((f) => f.name === typography.artistFontFamily);
+  const titleFont = FONTS.find((f) => f.name === typography.titleFontFamily);
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-0"
+      style={{ zIndex: 10 }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: layout.x * scale,
+          top: yAbsolute * scale,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: artistFont?.family ?? typography.artistFontFamily,
+            fontSize: typography.artistFontSize * scale,
+            fontWeight: typography.artistWeight,
+            fontStyle: typography.artistItalic ? "italic" : "normal",
+            textDecoration: typography.artistUnderline ? "underline" : "none",
+            color: color.artist,
+            letterSpacing: typography.letterSpacing * scale,
+            whiteSpace: "nowrap",
+            textShadow: "0 1px 3px rgba(0,0,0,0.8)",
+          }}
+        >
+          Artist Name
+        </div>
+        <div
+          style={{
+            fontFamily: titleFont?.family ?? typography.titleFontFamily,
+            fontSize: typography.titleFontSize * scale,
+            fontWeight: typography.titleWeight,
+            fontStyle: typography.titleItalic ? "italic" : "normal",
+            textDecoration: typography.titleUnderline ? "underline" : "none",
+            color: color.title,
+            letterSpacing: typography.letterSpacing * scale,
+            whiteSpace: "nowrap",
+            textShadow: "0 1px 3px rgba(0,0,0,0.8)",
+            marginTop: rowGapPx,
+          }}
+        >
+          Track Title
+        </div>
+      </div>
     </div>
   );
 }
