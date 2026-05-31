@@ -43,6 +43,32 @@ const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
 };
 
 const SELECTED_THUMBNAIL_KEY = "gytp:selected-thumbnail-background";
+const EDITOR_DRAFT_KEY = "gytp:editor-draft";
+
+type EditorDraft = {
+  editorSessionId: string;
+  title: string;
+  tracks: Track[];
+  background: Background | null;
+  transitionType: "silence" | "crossfade";
+  overlayMode: "0" | "2" | "5" | "full";
+  waveformStyle: ProjectSnapshot["renderConfig"]["waveform"]["style"];
+  playlistRepeatCount: number;
+  overlayPresetId: string;
+  hashtags: string[];
+  mastering: boolean;
+};
+
+function readEditorDraft(): EditorDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(EDITOR_DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as EditorDraft;
+  } catch {
+    return null;
+  }
+}
 
 function compareFilename(a: { filename: string }, b: { filename: string }): number {
   return a.filename.localeCompare(b.filename, undefined, {
@@ -67,33 +93,70 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const fromId = typeof params.from === "string" ? params.from : null;
   const selectedThumbnail = params.selectedThumbnail === "1";
 
-  const [editorSessionId] = useState<string>(() => crypto.randomUUID());
-  const [title, setTitle] = useState("");
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [background, setBackground] = useState<Background | null>(() => {
-    if (fromId || !selectedThumbnail || typeof window === "undefined") return null;
-    const raw = window.localStorage.getItem(SELECTED_THUMBNAIL_KEY);
-    if (!raw) return null;
-    try {
-      const parsed = BackgroundSchema.safeParse(JSON.parse(raw));
-      return parsed.success ? parsed.data : null;
-    } catch {
-      return null;
-    }
+  const [editorSessionId] = useState<string>(() => {
+    if (typeof window === "undefined") return crypto.randomUUID();
+    const draft = fromId ? null : readEditorDraft();
+    return draft?.editorSessionId ?? crypto.randomUUID();
   });
-  const [transitionType, setTransitionType] = useState<"silence" | "crossfade">("silence");
+  const [title, setTitle] = useState(() => {
+    if (fromId || typeof window === "undefined") return "";
+    return readEditorDraft()?.title ?? "";
+  });
+  const [tracks, setTracks] = useState<Track[]>(() => {
+    if (fromId || typeof window === "undefined") return [];
+    return readEditorDraft()?.tracks ?? [];
+  });
+  const [background, setBackground] = useState<Background | null>(() => {
+    if (fromId || typeof window === "undefined") return null;
+    if (selectedThumbnail) {
+      const raw = window.localStorage.getItem(SELECTED_THUMBNAIL_KEY);
+      if (raw) {
+        try {
+          const parsed = BackgroundSchema.safeParse(JSON.parse(raw));
+          if (parsed.success) return parsed.data;
+        } catch {}
+      }
+    }
+    return readEditorDraft()?.background ?? null;
+  });
+  const [transitionType, setTransitionType] = useState<"silence" | "crossfade">(() => {
+    if (fromId || typeof window === "undefined") return "silence";
+    return readEditorDraft()?.transitionType ?? "silence";
+  });
   const [crossfadeSec] = useState(2);
-  const [overlayMode, setOverlayMode] = useState<"0" | "2" | "5" | "full">("0");
-  const [waveformStyle, setWaveformStyle] = useState<ProjectSnapshot["renderConfig"]["waveform"]["style"]>("off");
-  const [playlistRepeatCount, setPlaylistRepeatCount] = useState(1);
-  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [overlayMode, setOverlayMode] = useState<"0" | "2" | "5" | "full">(() => {
+    if (fromId || typeof window === "undefined") return "0";
+    return readEditorDraft()?.overlayMode ?? "0";
+  });
+  const [waveformStyle, setWaveformStyle] = useState<ProjectSnapshot["renderConfig"]["waveform"]["style"]>(() => {
+    if (fromId || typeof window === "undefined") return "off";
+    return readEditorDraft()?.waveformStyle ?? "off";
+  });
+  const [playlistRepeatCount, setPlaylistRepeatCount] = useState(() => {
+    if (fromId || typeof window === "undefined") return 1;
+    return readEditorDraft()?.playlistRepeatCount ?? 1;
+  });
+  const [hashtags, setHashtags] = useState<string[]>(() => {
+    if (fromId || typeof window === "undefined") return [];
+    return readEditorDraft()?.hashtags ?? [];
+  });
   // Separate input state — only synced to hashtags on blur to avoid per-keystroke snapshot updates.
-  const [hashtagInput, setHashtagInput] = useState("");
+  const [hashtagInput, setHashtagInput] = useState(() => {
+    if (fromId || typeof window === "undefined") return "";
+    const draft = readEditorDraft();
+    return draft?.hashtags.join(", ") ?? "";
+  });
   const [hashtagLoading, setHashtagLoading] = useState(false);
   const [hashtagError, setHashtagError] = useState<string | null>(null);
-  const [mastering, setMastering] = useState(false);
+  const [mastering, setMastering] = useState(() => {
+    if (fromId || typeof window === "undefined") return false;
+    return readEditorDraft()?.mastering ?? false;
+  });
 
-  const [overlayPresetId, setOverlayPresetId] = useState("default");
+  const [overlayPresetId, setOverlayPresetId] = useState(() => {
+    if (fromId || typeof window === "undefined") return "default";
+    return readEditorDraft()?.overlayPresetId ?? "default";
+  });
   const [presets, setPresets] = useState<(OverlayPreset | null)[]>(Array(6).fill(null));
 
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
@@ -105,6 +168,25 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [presetLoadWarning, setPresetLoadWarning] = useState<string | null>(null);
 
   const hydratedRef = useRef(false);
+
+  // Persist editor state to localStorage on every relevant change (skip when viewing a saved project)
+  useEffect(() => {
+    if (fromId || typeof window === "undefined") return;
+    const draft: EditorDraft = {
+      editorSessionId,
+      title,
+      tracks,
+      background,
+      transitionType,
+      overlayMode,
+      waveformStyle,
+      playlistRepeatCount,
+      overlayPresetId,
+      hashtags,
+      mastering,
+    };
+    window.localStorage.setItem(EDITOR_DRAFT_KEY, JSON.stringify(draft));
+  }, [fromId, editorSessionId, title, tracks, background, transitionType, overlayMode, waveformStyle, playlistRepeatCount, overlayPresetId, hashtags, mastering]);
 
   useEffect(() => {
     fetch("/api/overlay-presets")

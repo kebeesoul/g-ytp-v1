@@ -192,7 +192,7 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     extraInputs = [...extraInputs, "-stream_loop", "-1", "-i", waveFile];
     filterScript =
       `${filterScript};\n` +
-      `[${waveInputIdx}:v]format=rgba,scale=240:240[_wave];\n` +
+      `[${waveInputIdx}:v]format=rgba,scale=192:240[_wave];\n` +
       `[${visualOutputLabel}][_wave]overlay=x=(W-w)/2:y=H*0.85-h/2:format=auto:shortest=1[vout]`;
   }
 
