@@ -9,19 +9,15 @@ interface PresetEditorProps {
   preset: OverlayPreset | null;
   onSaved: (preset: OverlayPreset) => void;
   onDraftChange?: (draft: OverlayPreset) => void;
+  /** Called once on mount; receives a setter fn the page can call to push x/y from preview drag */
+  onRegisterPositionSync?: (fn: (x: number, y: number) => void) => () => void;
 }
-
-const ANCHOR_OPTIONS = [
-  "top-left", "top-center", "top-right",
-  "center",
-  "bottom-left", "bottom-center", "bottom-right",
-] as const;
 
 function defaultDraft(slotId: string): OverlayPreset {
   return OverlayPresetSchema.parse({ id: slotId, version: 1 });
 }
 
-export function PresetEditor({ slotId, preset, onSaved, onDraftChange }: PresetEditorProps) {
+export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegisterPositionSync }: PresetEditorProps) {
   const [name, setName] = useState("");
   const [draft, setDraft] = useState<OverlayPreset>(() => preset ?? defaultDraft(slotId));
   const [saving, setSaving] = useState(false);
@@ -54,6 +50,19 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange }: PresetE
       link.dataset.gfOverlay = "1";
       document.head.appendChild(link);
     }
+  }, []);
+
+  // Allow the page's preview drag to push x/y back into this editor's draft
+  useEffect(() => {
+    if (!onRegisterPositionSync) return;
+    return onRegisterPositionSync((x, y) => {
+      setDraft((prev) => {
+        const next = { ...prev, layout: { ...prev.layout, x, y } };
+        onDraftChange?.(next);
+        return next;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function set<K extends keyof OverlayPreset>(
@@ -101,41 +110,15 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange }: PresetE
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      {/* Memo / Name */}
-      <Section title="기본">
-        <Field label="메모 (슬롯 이름)">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              set("animation", "animMemo", e.target.value);
-            }}
-            placeholder="ex) 로파이 화이트"
-            className={inputCls}
-          />
-        </Field>
-      </Section>
-
-      {/* Layout */}
-      <Section title="레이아웃">
-        <Field label="기준점">
-          <select
-            value={draft.layout.anchor}
-            onChange={(e) => set("layout", "anchor", e.target.value)}
-            className={inputCls}
-          >
-            {ANCHOR_OPTIONS.map((a) => (
-              <option key={a} value={a}>{a}</option>
-            ))}
-          </select>
-        </Field>
+      {/* Layout — X/Y only; position can also be set by dragging the preview */}
+      <Section title="위치">
+        <p className="text-[10px] text-gray-600">미리보기에서 텍스트를 드래그하면 위치가 바뀝니다</p>
         <div className="grid grid-cols-2 gap-3">
           <Field label="X 오프셋">
-            <NumInput value={draft.layout.x} onChange={(v) => set("layout", "x", v)} />
+            <ScrubInput value={draft.layout.x} onChange={(v) => set("layout", "x", v)} step={2} />
           </Field>
           <Field label="Y 오프셋">
-            <NumInput value={draft.layout.y} onChange={(v) => set("layout", "y", v)} />
+            <ScrubInput value={draft.layout.y} onChange={(v) => set("layout", "y", v)} step={2} />
           </Field>
         </div>
       </Section>
@@ -144,16 +127,16 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange }: PresetE
       <Section title="타이포그래피">
         <div className="grid grid-cols-2 gap-3">
           <Field label="아티스트 폰트 크기">
-            <NumInput value={draft.typography.artistFontSize} onChange={(v) => set("typography", "artistFontSize", v)} min={8} />
+            <ScrubInput value={draft.typography.artistFontSize} onChange={(v) => set("typography", "artistFontSize", v)} min={8} max={120} />
           </Field>
           <Field label="제목 폰트 크기">
-            <NumInput value={draft.typography.titleFontSize} onChange={(v) => set("typography", "titleFontSize", v)} min={8} />
+            <ScrubInput value={draft.typography.titleFontSize} onChange={(v) => set("typography", "titleFontSize", v)} min={8} max={120} />
           </Field>
           <Field label="줄 높이">
-            <NumInput value={draft.typography.lineHeight} onChange={(v) => set("typography", "lineHeight", v)} min={0.5} max={3} step={0.05} />
+            <ScrubInput value={draft.typography.lineHeight} onChange={(v) => set("typography", "lineHeight", v)} min={0.5} max={3} step={0.05} />
           </Field>
           <Field label="자간">
-            <NumInput value={draft.typography.letterSpacing} onChange={(v) => set("typography", "letterSpacing", v)} step={0.1} />
+            <ScrubInput value={draft.typography.letterSpacing} onChange={(v) => set("typography", "letterSpacing", v)} step={0.5} />
           </Field>
           <Field label="정렬">
             <select
@@ -190,12 +173,6 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange }: PresetE
           <Field label="제목 색상">
             <ColorInput value={draft.color.title} onChange={(v) => set("color", "title", v)} />
           </Field>
-          <Field label="배경 색상">
-            <ColorInput value={draft.color.background ?? "#000000"} onChange={(v) => set("color", "background", v)} />
-          </Field>
-          <Field label="그림자 색상">
-            <ColorInput value={draft.color.shadow ?? "#000000"} onChange={(v) => set("color", "shadow", v)} />
-          </Field>
         </div>
       </Section>
 
@@ -203,10 +180,10 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange }: PresetE
       <Section title="애니메이션">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fade In (초)">
-            <NumInput value={draft.animation.fadeInSec} onChange={(v) => set("animation", "fadeInSec", v)} min={0} step={0.1} />
+            <ScrubInput value={draft.animation.fadeInSec} onChange={(v) => set("animation", "fadeInSec", v)} min={0} max={3} step={0.05} />
           </Field>
           <Field label="Fade Out (초)">
-            <NumInput value={draft.animation.fadeOutSec} onChange={(v) => set("animation", "fadeOutSec", v)} min={0} step={0.1} />
+            <ScrubInput value={draft.animation.fadeOutSec} onChange={(v) => set("animation", "fadeOutSec", v)} min={0} max={3} step={0.05} />
           </Field>
         </div>
       </Section>
@@ -249,12 +226,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function NumInput({
-  value,
-  onChange,
-  min,
-  max,
-  step = 1,
+function ScrubInput({
+  value, onChange, min, max, step = 1,
 }: {
   value: number;
   onChange: (v: number) => void;
@@ -262,19 +235,44 @@ function NumInput({
   max?: number;
   step?: number;
 }) {
+  const startY = useRef(0);
+  const startVal = useRef(0);
+  const active = useRef(false);
+
+  function clamp(v: number) {
+    let out = v;
+    if (min !== undefined && out < min) out = min;
+    if (max !== undefined && out > max) out = max;
+    return out;
+  }
+
+  function snap(v: number) {
+    const inv = 1 / step;
+    return Math.round(v * inv) / inv;
+  }
+
+  const display = step < 0.1 ? value.toFixed(2) : step < 1 ? value.toFixed(1) : String(value);
+
   return (
-    <input
-      type="number"
-      value={value}
-      min={min}
-      max={max}
-      step={step}
-      onChange={(e) => {
-        const v = parseFloat(e.target.value);
-        if (!isNaN(v)) onChange(v);
+    <div
+      className={`${inputCls} flex cursor-ns-resize select-none items-center justify-between`}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        active.current = true;
+        startY.current = e.clientY;
+        startVal.current = value;
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       }}
-      className={inputCls}
-    />
+      onPointerMove={(e) => {
+        if (!active.current) return;
+        const delta = startY.current - e.clientY; // drag up = increase
+        onChange(clamp(snap(startVal.current + delta * step)));
+      }}
+      onPointerUp={() => { active.current = false; }}
+    >
+      <span className="text-[10px] text-gray-600">↕</span>
+      <span className="font-mono">{display}</span>
+    </div>
   );
 }
 
@@ -282,11 +280,16 @@ function NumInput({
 
 const PREVIEW_SCALE = 480 / 1920; // 1/4 of full 1920×1080
 
-export function PresetPreview({ draft }: { draft: OverlayPreset }) {
+export function PresetPreview({
+  draft,
+  onPositionChange,
+}: {
+  draft: OverlayPreset;
+  onPositionChange?: (x: number, y: number) => void;
+}) {
   const titleLineH = Math.ceil(
     draft.typography.titleFontSize * draft.typography.lineHeight
   );
-  // FFmpeg: y<0 means bottom-relative (h+y), so title top y in 1080p frame
   const yAbsolute = draft.layout.y < 0 ? 1080 + draft.layout.y : draft.layout.y;
   const yArtistAbsolute = yAbsolute - titleLineH;
 
@@ -298,14 +301,31 @@ export function PresetPreview({ draft }: { draft: OverlayPreset }) {
   const artistCss = artistFont?.family ?? draft.typography.artistFontFamily;
   const titleCss = titleFont?.family ?? draft.typography.titleFontFamily;
 
-  const cardStyle: React.CSSProperties = draft.card.enabled
-    ? {
-        background: draft.color.background ?? "rgba(0,0,0,0.55)",
-        borderRadius: draft.card.radius * PREVIEW_SCALE,
-        padding: `${draft.card.paddingY * PREVIEW_SCALE}px ${draft.card.paddingX * PREVIEW_SCALE}px`,
-        opacity: draft.card.opacity,
-      }
-    : {};
+  // Drag state
+  const dragStart = useRef<{ clientX: number; clientY: number; layoutX: number; layoutY: number } | null>(null);
+
+  function handlePointerDown(e: React.PointerEvent) {
+    if (!onPositionChange) return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragStart.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      layoutX: draft.layout.x,
+      layoutY: draft.layout.y,
+    };
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (!dragStart.current || !onPositionChange) return;
+    const dx = Math.round((e.clientX - dragStart.current.clientX) / PREVIEW_SCALE);
+    const dy = Math.round((e.clientY - dragStart.current.clientY) / PREVIEW_SCALE);
+    onPositionChange(dragStart.current.layoutX + dx, dragStart.current.layoutY + dy);
+  }
+
+  function handlePointerUp() {
+    dragStart.current = null;
+  }
 
   return (
     <div
@@ -317,19 +337,23 @@ export function PresetPreview({ draft }: { draft: OverlayPreset }) {
         flexShrink: 0,
       }}
     >
-      {/* Scale label */}
       <span className="absolute top-1.5 right-2 text-[9px] text-white/30 select-none">
         미리보기 (1/4)
       </span>
-      {/* Text block */}
+      {/* Draggable text block */}
       <div
         style={{
           position: "absolute",
           left: xPx,
           top: Math.max(0, yArtistPx),
+          cursor: onPositionChange ? "move" : "default",
+          userSelect: "none",
         }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
       >
-        <div style={cardStyle}>
+        <div>
           <div
             style={{
               fontFamily: artistCss,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { z } from "zod";
 import { OverlayPresetSchema, type OverlayPreset } from "@/lib/schema";
 import { PresetEditor, PresetPreview } from "@/components/settings/PresetEditor";
@@ -9,6 +9,7 @@ export default function SettingsPage() {
   const [presets, setPresets] = useState<(OverlayPreset | null)[]>(Array(6).fill(null));
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [liveDraft, setLiveDraft] = useState<OverlayPreset | null>(null);
+  const positionSyncRef = useRef<((x: number, y: number) => void) | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -61,6 +62,12 @@ export default function SettingsPage() {
   function handleSelectSlot(index: number) {
     setSelectedIndex(index);
     setLiveDraft(null);
+    positionSyncRef.current = null;
+  }
+
+  function handlePositionChange(x: number, y: number) {
+    setLiveDraft((prev) => prev ? { ...prev, layout: { ...prev.layout, x, y } } : prev);
+    positionSyncRef.current?.(x, y);
   }
 
   const slotId = `slot-${selectedIndex + 1}`;
@@ -90,7 +97,7 @@ export default function SettingsPage() {
               {/* Preview */}
               <div className="overflow-hidden rounded-md border border-gray-700">
                 {previewDraft
-                  ? <PresetPreview draft={previewDraft} />
+                  ? <PresetPreview draft={previewDraft} onPositionChange={handlePositionChange} />
                   : <div className="flex items-center justify-center bg-gray-900" style={{ width: 480, height: 270 }}>
                       <span className="text-xs text-gray-600">슬롯을 선택하세요</span>
                     </div>
@@ -157,6 +164,10 @@ export default function SettingsPage() {
                 preset={presets[selectedIndex]}
                 onSaved={handleSaved}
                 onDraftChange={setLiveDraft}
+                onRegisterPositionSync={(fn) => {
+                  positionSyncRef.current = fn;
+                  return () => { positionSyncRef.current = null; };
+                }}
               />
             </div>
           </div>
