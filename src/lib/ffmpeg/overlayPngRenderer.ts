@@ -51,13 +51,15 @@ async function generateSinglePng(
   outputPath: string
 ): Promise<void> {
   const { layout, typography, color } = preset;
-  const titleLineH = Math.ceil(typography.titleFontSize * typography.lineHeight);
+  // lineHeight is now a pixel gap between artist and title rows (not a multiplier).
+  const rowGap = typography.lineHeight;
+  const artistOffset = typography.artistFontSize + rowGap;
 
-  // y < 0 → bottom-relative (e.g. "h-160"), matching overlayDrawtextRenderer logic
+  // y is the title's top position. Artist sits above it by artistFontSize + gap.
   const yTitle = layout.y < 0 ? `h${layout.y}` : `${layout.y}`;
   const yArtist = layout.y < 0
-    ? `h${layout.y - titleLineH}`
-    : `${layout.y - titleLineH}`;
+    ? `h${layout.y - artistOffset}`
+    : `${layout.y - artistOffset}`;
 
   const artistFontfile = escapeDrawtext(resolveOverlayFontPath(typography.artistFontFamily));
   const titleFontfile = escapeDrawtext(resolveOverlayFontPath(typography.titleFontFamily));

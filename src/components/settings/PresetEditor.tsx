@@ -384,11 +384,14 @@ export function PresetPreview({
   draft: OverlayPreset;
   onPositionChange?: (x: number, y: number) => void;
 }) {
-  const rowGapPx = draft.typography.lineHeight * PREVIEW_SCALE;
+  // y is the title's top position; artist sits above by artistFontSize + lineHeight (row gap)
   const yAbsolute = draft.layout.y < 0 ? 1080 + draft.layout.y : draft.layout.y;
+  const rowGapPx = draft.typography.lineHeight * PREVIEW_SCALE;
+  const artistOffsetPx = (draft.typography.artistFontSize + draft.typography.lineHeight) * PREVIEW_SCALE;
 
   const xPx = Math.max(0, draft.layout.x * PREVIEW_SCALE);
-  const yArtistPx = yAbsolute * PREVIEW_SCALE;
+  const yTitlePx = yAbsolute * PREVIEW_SCALE;
+  const yArtistPx = Math.max(0, yTitlePx - artistOffsetPx);
 
   const artistFont = FONTS.find((f) => f.name === draft.typography.artistFontFamily);
   const titleFont = FONTS.find((f) => f.name === draft.typography.titleFontFamily);

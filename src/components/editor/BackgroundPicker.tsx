@@ -209,8 +209,10 @@ export function BackgroundPicker({
 
 function OverlayMock({ preset, scale }: { preset: OverlayPreset; scale: number }) {
   const { layout, typography, color } = preset;
+  // y is the title's top; artist sits above by artistFontSize + lineHeight (row gap)
   const yAbsolute = layout.y < 0 ? 1080 + layout.y : layout.y;
   const rowGapPx = typography.lineHeight * scale;
+  const artistOffsetPx = (typography.artistFontSize + typography.lineHeight) * scale;
 
   const artistFont = FONTS.find((f) => f.name === typography.artistFontFamily);
   const titleFont = FONTS.find((f) => f.name === typography.titleFontFamily);
@@ -224,7 +226,7 @@ function OverlayMock({ preset, scale }: { preset: OverlayPreset; scale: number }
         style={{
           position: "absolute",
           left: layout.x * scale,
-          top: yAbsolute * scale,
+          top: Math.max(0, yAbsolute * scale - artistOffsetPx),
         }}
       >
         <div
