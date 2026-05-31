@@ -95,13 +95,20 @@ export default function SettingsPage() {
             {/* Left Rail: Preview + Slot Grid */}
             <div className="flex flex-col gap-4">
               {/* Preview */}
-              <div className="overflow-hidden rounded-md border border-gray-700">
+              <div className="relative rounded-md border border-gray-700" style={{ width: 480, height: 270 }}>
                 {previewDraft
                   ? <PresetPreview draft={previewDraft} onPositionChange={handlePositionChange} />
-                  : <div className="flex items-center justify-center bg-gray-900" style={{ width: 480, height: 270 }}>
+                  : <div className="flex h-full w-full items-center justify-center rounded-md bg-gray-900">
                       <span className="text-xs text-gray-600">슬롯을 선택하세요</span>
                     </div>
                 }
+                {/* Center indicator dot — outside PresetPreview overflow so it's always visible */}
+                <div
+                  className="pointer-events-none absolute z-10"
+                  style={{ left: 240, top: 135, transform: "translate(-50%, -50%)" }}
+                >
+                  <div className="h-2 w-2 rounded-full bg-yellow-400 shadow-[0_0_4px_rgba(250,204,21,0.8)]" />
+                </div>
               </div>
 
               {/* Slot Grid 2×3 */}

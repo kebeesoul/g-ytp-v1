@@ -399,12 +399,11 @@ export function PresetPreview({
 
   return (
     <div
-      className="relative overflow-hidden rounded-md"
+      className="relative overflow-hidden"
       style={{
         width: 480,
         height: 270,
         background: "linear-gradient(135deg,#1a1a2e 0%,#0f3460 55%,#16213e 100%)",
-        flexShrink: 0,
       }}
     >
       <span className="absolute top-1.5 right-2 text-[9px] text-white/30 select-none">
