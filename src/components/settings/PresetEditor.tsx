@@ -242,10 +242,10 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
       <Section title="애니메이션">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fade In (초)">
-            <ScrubInput value={draft.animation.fadeInSec} onChange={(v) => set("animation", "fadeInSec", v)} min={0} max={3} step={0.05} />
+            <ScrubInput value={draft.animation.fadeInSec} onChange={(v) => set("animation", "fadeInSec", v)} min={0} max={1} step={0.05} />
           </Field>
           <Field label="Fade Out (초)">
-            <ScrubInput value={draft.animation.fadeOutSec} onChange={(v) => set("animation", "fadeOutSec", v)} min={0} max={3} step={0.05} />
+            <ScrubInput value={draft.animation.fadeOutSec} onChange={(v) => set("animation", "fadeOutSec", v)} min={0} max={1} step={0.05} />
           </Field>
         </div>
       </Section>
