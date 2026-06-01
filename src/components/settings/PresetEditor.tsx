@@ -522,21 +522,27 @@ function FontSelect({ value, onChange }: { value: string; onChange: (v: string) 
       </button>
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-md border border-gray-600 bg-gray-800 shadow-xl">
-          {FONTS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => { onChange(f.name); setOpen(false); }}
-              className={`w-full px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-gray-700 transition-colors ${
-                value === f.name ? "bg-blue-500/20 text-blue-300" : "text-white"
-              }`}
-            >
-              <span style={{ fontFamily: f.family }} className="text-sm">
-                {f.label}
-              </span>
-              <span className="shrink-0 text-[10px] text-gray-500">{f.tag}</span>
-            </button>
-          ))}
+          {FONTS.map((f) => {
+            const renderOk = "googleKey" in f && f.googleKey !== null;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => { onChange(f.name); setOpen(false); }}
+                className={`w-full px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-gray-700 transition-colors ${
+                  value === f.name ? "bg-blue-500/20 text-blue-300" : "text-white"
+                }`}
+              >
+                <span style={{ fontFamily: f.family }} className="text-sm">
+                  {f.label}
+                </span>
+                <span className="shrink-0 text-[10px] text-gray-500">
+                  {"tag" in f ? f.tag : ""}
+                  {!renderOk && <span className="ml-1 text-amber-500">⚠ 렌더 미지원</span>}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

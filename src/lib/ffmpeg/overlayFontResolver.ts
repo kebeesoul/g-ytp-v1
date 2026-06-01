@@ -20,5 +20,7 @@ export function resolveOverlayFontPath(fontFamily: string): string {
     }
   }
 
+  // Font file not found — falling back to system default
+  console.warn(`[overlayFontResolver] font not found for "${fontFamily}", falling back to ${FALLBACK_FONT_PATH}`);
   return FALLBACK_FONT_PATH;
 }
