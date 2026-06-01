@@ -6,19 +6,19 @@ import { ThumbnailSettingsSchema } from "@/lib/thumbnail/schema";
 describe("Thumbnail Phase 1 integration", () => {
   it("defines the fixed design option sets from the spec", () => {
     expect(FONTS.map((f) => f.id)).toEqual([
-      "bagnard",
+      "playfairdisplay",
       "ebgaramond",
       "inter",
       "leaguegothic",
       "librebaskerville",
-      "officecodepro",
+      "spacemono",
       "youngserif",
-      "ostrichsans",
+      "raleway",
       "oswald",
-      "reglo",
+      "archivoblack",
       "roboto",
-      "terminalgrotesque",
-      "bluunext",
+      "spacegrotesk",
+      "bodonimoda",
       "geometricclean",
       "thinelegant",
     ]);
@@ -30,7 +30,7 @@ describe("Thumbnail Phase 1 integration", () => {
 
   it("validates default thumbnail settings with zod", () => {
     expect(ThumbnailSettingsSchema.parse(DEFAULT_THUMBNAIL_SETTINGS)).toEqual({
-      fontId: "bagnard",
+      fontId: "playfairdisplay",
       overlayId: "none",
       positionId: "bottom",
       colorId: "white",

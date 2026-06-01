@@ -2,19 +2,19 @@ import { z } from "zod";
 
 export const ThumbnailSettingsSchema = z.object({
   fontId: z.enum([
-    "bagnard",
+    "playfairdisplay",
     "ebgaramond",
     "inter",
     "leaguegothic",
     "librebaskerville",
-    "officecodepro",
+    "spacemono",
     "youngserif",
-    "ostrichsans",
+    "raleway",
     "oswald",
-    "reglo",
+    "archivoblack",
     "roboto",
-    "terminalgrotesque",
-    "bluunext",
+    "spacegrotesk",
+    "bodonimoda",
     "geometricclean",
     "thinelegant",
   ]),
@@ -74,7 +74,7 @@ function normalizeFontId(fontId: string): ThumbnailSettings["fontId"] {
   if (fontId === "josefin") return "geometricclean";
   if (fontId === "cormorant") return "thinelegant";
   const parsed = ThumbnailSettingsSchema.shape.fontId.safeParse(fontId);
-  return parsed.success ? parsed.data : "bagnard";
+  return parsed.success ? parsed.data : "playfairdisplay";
 }
 
 function normalizeOverlayId(overlayId: string): ThumbnailSettings["overlayId"] {
