@@ -491,6 +491,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
               value={background}
               onChange={setBackground}
               overlayPreview={presets.find((p) => p?.id === overlayPresetId) ?? null}
+              waveformStyle={waveformStyle}
             />
 
             <OverlayPresetSlots

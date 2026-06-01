@@ -40,7 +40,10 @@ export const PresetRowSchema = z.object({
 
 export type PresetRow = z.infer<typeof PresetRowSchema>;
 
+const VALID_RENDERERS = ["drawtext", "png_card"] as const;
+
 export function rowToPreset(row: PresetRow): OverlayPreset | null {
+  if (!VALID_RENDERERS.includes(row.renderer as typeof VALID_RENDERERS[number])) return null;
   const result = OverlayPresetSchema.safeParse({
     id: row.id,
     version: row.version,

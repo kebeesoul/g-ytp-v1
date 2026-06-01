@@ -61,9 +61,9 @@ describe("Render request preconditions", () => {
     expect(code).toContain('transition: { type: "silence", crossfadeSec: 2 }');
     expect(code).toContain('overlay: { displayMode: "0", presetId: "default", presetVersion: 1 }');
     expect(code).toContain('waveform: { style: "off" }');
-    expect(code).toContain('useState<"silence" | "crossfade">("silence")');
-    expect(code).toContain('useState<"0" | "2" | "5" | "full">("0")');
-    expect(code).toContain('useState<ProjectSnapshot["renderConfig"]["waveform"]["style"]>("off")');
+    expect(code).toContain('readEditorDraft()?.transitionType ?? "silence"');
+    expect(code).toContain('readEditorDraft()?.overlayMode ?? "0"');
+    expect(code).toContain('readEditorDraft()?.waveformStyle ?? "off"');
   });
 
   it("accepts a renderable snapshot", () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { BackgroundSchema } from "@/lib/schema";
-import type { Background, OverlayPreset } from "@/lib/schema";
+import type { Background, OverlayPreset, ProjectSnapshot } from "@/lib/schema";
 import { FONTS } from "@/lib/thumbnail/constants";
 
 interface BackgroundPickerProps {
@@ -10,6 +10,7 @@ interface BackgroundPickerProps {
   value: Background | null;
   onChange: (bg: Background | null) => void;
   overlayPreview?: OverlayPreset | null;
+  waveformStyle?: ProjectSnapshot["renderConfig"]["waveform"]["style"];
 }
 
 const DIM_DEFAULT = 0.25;
@@ -19,6 +20,7 @@ export function BackgroundPicker({
   value,
   onChange,
   overlayPreview,
+  waveformStyle,
 }: BackgroundPickerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -149,6 +151,9 @@ export function BackgroundPicker({
         {overlayPreview && canvasDisplayWidth > 0 && (
           <OverlayMock preset={overlayPreview} scale={canvasDisplayWidth / 1920} />
         )}
+        {waveformStyle && waveformStyle !== "off" && canvasDisplayWidth > 0 && (
+          <WaveformMock style={waveformStyle} canvasDisplayWidth={canvasDisplayWidth} />
+        )}
       </div>
 
 <input
@@ -201,6 +206,40 @@ export function BackgroundPicker({
           onClose={() => setShowCropEditor(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Waveform Mock ───────────────────────────────────────────────────────────
+
+function WaveformMock({
+  style,
+  canvasDisplayWidth,
+}: {
+  style: string;
+  canvasDisplayWidth: number;
+}) {
+  // FFmpeg positions waveform at scale=240:240 in 1920x1080 space
+  // x=(W-w)/2, y=H*0.85-h/2
+  // Map to canvas internal space (1280x720): scale = 2/3
+  const WAVE_CANVAS_PX = 240 * (2 / 3); // 160px in 1280x720
+  const displayScale = canvasDisplayWidth / 1280;
+  const size = WAVE_CANVAS_PX * displayScale;
+  const canvasDisplayHeight = canvasDisplayWidth * (9 / 16);
+  const left = (canvasDisplayWidth - size) / 2;
+  const top = canvasDisplayHeight * 0.85 - size / 2;
+
+  return (
+    <div
+      className="pointer-events-none absolute"
+      style={{ left, top, width: size, height: size, zIndex: 10 }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/waveforms/${style}-preview.png`}
+        alt={style}
+        style={{ width: "100%", height: "100%", objectFit: "contain" }}
+      />
     </div>
   );
 }

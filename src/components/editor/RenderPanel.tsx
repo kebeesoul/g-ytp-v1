@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRenderJob } from "@/lib/useRenderJob";
 import type { ProjectSnapshot } from "@/lib/schema";
 import { FIXED_MASTERING_SETTINGS } from "@/lib/mastering/constants";
@@ -29,6 +30,20 @@ export function RenderPanel({
   onPlaylistRepeatCountChange,
 }: RenderPanelProps) {
   const { jobId, status, submitting, cancelling, error, startRender, cancelRender } = useRenderJob();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearResult, setClearResult] = useState<string | null>(null);
+
+  async function handleClearWorkspace() {
+    setShowClearConfirm(false);
+    setClearResult(null);
+    const res = await fetch("/api/workspace-clear", { method: "DELETE" });
+    if (res.ok) {
+      const body = (await res.json()) as { deleted: number };
+      setClearResult(`삭제 완료 (${body.deleted}개 항목)`);
+    } else {
+      setClearResult("삭제 실패");
+    }
+  }
 
   const isRunning =
     status?.status === "queued" || status?.status === "running";
@@ -144,6 +159,44 @@ export function RenderPanel({
       {isError && status?.error_msg && (
         <div className="border border-[#5a2a2a] bg-[#120707] px-3 py-2 text-xs text-[var(--vm-error)]">
           렌더 실패: {status.error_msg}
+        </div>
+      )}
+
+      {/* All Delete */}
+      <div className="mt-2 border-t border-[var(--vm-border)] pt-3">
+        <button
+          onClick={() => { setClearResult(null); setShowClearConfirm(true); }}
+          disabled={submitting || isRunning}
+          className="w-full border border-[#5a2a2a] bg-[#120707] px-3 py-2 text-xs uppercase tracking-[0.12em] text-[var(--vm-error)] hover:bg-[#1e0a0a] disabled:opacity-30"
+        >
+          All Delete
+        </button>
+        {clearResult && (
+          <p className="mt-1 text-center text-[11px] text-[var(--vm-subtle)]">{clearResult}</p>
+        )}
+      </div>
+
+      {/* 삭제 확인 팝업 */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="flex flex-col gap-4 rounded border border-[var(--vm-border)] bg-[#0d0d0d] p-5 shadow-xl">
+            <p className="text-sm text-[var(--vm-text)]">정말 삭제하시겠습니까?</p>
+            <p className="text-[11px] text-[var(--vm-subtle)]">workspace 내 모든 파일이 삭제됩니다.</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="vm-button-secondary px-4 py-1.5 text-xs"
+              >
+                No
+              </button>
+              <button
+                onClick={() => void handleClearWorkspace()}
+                className="border border-[#5a2a2a] bg-[#1e0a0a] px-4 py-1.5 text-xs text-[var(--vm-error)] hover:bg-[#2a0f0f]"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
