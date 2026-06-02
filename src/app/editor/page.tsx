@@ -474,6 +474,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             onDelete={handleDelete}
             onPlay={handlePlay}
             onFilesAdded={handleFilesAdded}
+            playlistRepeatCount={playlistRepeatCount}
           />
 
           {snapshotValid && (

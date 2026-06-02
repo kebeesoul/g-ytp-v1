@@ -29,6 +29,7 @@ interface TrackListProps {
   onDelete: (id: string) => void;
   onPlay: (id: string) => void;
   onFilesAdded: (files: File[]) => Promise<void> | void;
+  playlistRepeatCount?: number;
 }
 
 function isAudioFile(file: File): boolean {
@@ -45,6 +46,7 @@ export function TrackList({
   onDelete,
   onPlay,
   onFilesAdded,
+  playlistRepeatCount = 1,
 }: TrackListProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
@@ -146,7 +148,7 @@ export function TrackList({
           {tracks.length > 0 && (
             <span className="ml-2 text-[var(--vm-subtle)]">
               {(() => {
-                const total = Math.round(tracks.reduce((s, t) => s + t.durationSec, 0));
+                const total = Math.round(tracks.reduce((s, t) => s + t.durationSec, 0) * playlistRepeatCount);
                 const m = Math.floor(total / 60);
                 const s = total % 60;
                 return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
