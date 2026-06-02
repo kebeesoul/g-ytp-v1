@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProjectSnapshot } from "@/lib/schema";
-import { prepareRenderVideoAssets, renderVideo } from "./renderVideo";
+import { prepareRenderVideoAssets, renderVideo, repeatRenderedVideo } from "./renderVideo";
 import type { PngCardSpec } from "./overlayPngRenderer";
 import { runFfmpeg } from "./runFfmpeg";
 
@@ -154,5 +154,25 @@ describe("renderVideo", () => {
     expect(calls.some((args) => args.includes("-filter_complex_script"))).toBe(true);
     expect(calls.at(-1)).toContain("-f concat");
     expect(calls.at(-1)).toContain("segments.txt");
+  });
+
+  it("repeats a completed render with stream-copy concat", async () => {
+    const workDir = await mkdtemp(join(tmpdir(), "gytp-repeat-test-"));
+
+    await repeatRenderedVideo({
+      jobId: "job",
+      inputPath: join(workDir, "final_once.mp4"),
+      outputPath: join(workDir, "final.mp4"),
+      workDir,
+      repeatCount: 5,
+    });
+
+    expect(runFfmpeg).toHaveBeenCalledTimes(1);
+    const args = vi.mocked(runFfmpeg).mock.calls[0]?.[0].args;
+    expect(args).toContain("-f");
+    expect(args).toContain("concat");
+    expect(args).toContain("-c");
+    expect(args).toContain("copy");
+    expect(args?.join(" ")).toContain("repeat_list.txt");
   });
 });

@@ -28,6 +28,14 @@ export interface RenderVideoOptions {
   preparedAssets?: PreparedRenderVideoAssets;
 }
 
+export interface RepeatRenderedVideoOptions {
+  jobId: string;
+  inputPath: string;
+  outputPath: string;
+  workDir: string;
+  repeatCount: number;
+}
+
 type RenderFilterPlan = {
   filterScript: string;
   extraInputs: string[];
@@ -51,7 +59,6 @@ export async function preparePngCardSpecs(
   const { tracks, renderConfig } = snapshot;
   const { transition, overlay } = renderConfig;
   const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
-  const repeatCount = renderConfig.playlistRepeatCount;
 
   if (preset.renderer !== "png_card" || overlay.displayMode === "0") return null;
 
@@ -60,23 +67,20 @@ export async function preparePngCardSpecs(
   const baseDurationSec = computePlaylistDurationSec(snapshot);
 
   const specs: PngCardSpec[] = [];
-  for (let cycle = 0; cycle < repeatCount; cycle++) {
-    const cycleOffset = cycle * baseDurationSec;
-    for (let i = 0; i < tracks.length; i++) {
-      const timing = resolveOverlayTimings(
-        trackStartSecs[i] + cycleOffset,
-        tracks[i].durationSec,
-        overlay.displayMode
-      );
-      if (timing.skip) continue;
-      specs.push({
-        localPath: join(workDir, `card_${cycle}_${i}.png`),
-        track: tracks[i],
-        tStart: timing.tStart,
-        tEnd: timing.tEnd,
-        fadeOut: timing.fadeOut,
-      });
-    }
+  for (let i = 0; i < tracks.length; i++) {
+    const timing = resolveOverlayTimings(
+      trackStartSecs[i],
+      tracks[i].durationSec,
+      overlay.displayMode
+    );
+    if (timing.skip) continue;
+    specs.push({
+      localPath: join(workDir, `card_0_${i}.png`),
+      track: tracks[i],
+      tStart: timing.tStart,
+      tEnd: Math.min(timing.tEnd, baseDurationSec),
+      fadeOut: timing.fadeOut,
+    });
   }
 
   await generatePngCards(specs, preset);
@@ -135,10 +139,9 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
 
   const { renderConfig } = snapshot;
   const { overlay, waveform, hwaccel } = renderConfig;
-  const repeatCount = renderConfig.playlistRepeatCount;
 
   const baseDurationSec = computePlaylistDurationSec(snapshot);
-  const totalAudioSec = baseDurationSec * repeatCount;
+  const totalAudioSec = baseDurationSec;
 
   const useVideotoolbox =
     hwaccel === "videotoolbox" && process.env.HWACCEL_DISABLED !== "1";
@@ -338,7 +341,7 @@ async function renderPngOverlaySegmentCopyPath(options: {
   });
 
   const totalAudioSec =
-    computePlaylistDurationSec(options.snapshot) * options.snapshot.renderConfig.playlistRepeatCount;
+    computePlaylistDurationSec(options.snapshot);
   const segments = buildOverlaySegments(options.pngCardSpecs, totalAudioSec);
   const segmentPaths: string[] = [];
 
@@ -406,7 +409,6 @@ async function buildRenderFilterPlan(options: {
   const { tracks, renderConfig } = snapshot;
   const { transition, overlay, waveform } = renderConfig;
   const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
-  const repeatCount = renderConfig.playlistRepeatCount;
   const timings = computeTrackTimings(tracks, transition);
   const trackStartSecs = timings.map((t) => t.startSec);
   const baseDurationSec = computePlaylistDurationSec(snapshot);
@@ -420,23 +422,20 @@ async function buildRenderFilterPlan(options: {
       specs = options.pngCardSpecs;
     } else {
       const built: PngCardSpec[] = [];
-      for (let cycle = 0; cycle < repeatCount; cycle++) {
-        const cycleOffset = cycle * baseDurationSec;
-        for (let i = 0; i < tracks.length; i++) {
-          const timing = resolveOverlayTimings(
-            trackStartSecs[i] + cycleOffset,
-            tracks[i].durationSec,
-            overlay.displayMode
-          );
-          if (timing.skip) continue;
-          built.push({
-            localPath: join(workDir, `card_${cycle}_${i}.png`),
-            track: tracks[i],
-            tStart: timing.tStart,
-            tEnd: timing.tEnd,
-            fadeOut: timing.fadeOut,
-          });
-        }
+      for (let i = 0; i < tracks.length; i++) {
+        const timing = resolveOverlayTimings(
+          trackStartSecs[i],
+          tracks[i].durationSec,
+          overlay.displayMode
+        );
+        if (timing.skip) continue;
+        built.push({
+          localPath: join(workDir, `card_0_${i}.png`),
+          track: tracks[i],
+          tStart: timing.tStart,
+          tEnd: Math.min(timing.tEnd, baseDurationSec),
+          fadeOut: timing.fadeOut,
+        });
       }
       await generatePngCards(built, preset);
       specs = built;
@@ -481,6 +480,38 @@ async function buildRenderFilterPlan(options: {
   }
 
   return { filterScript, extraInputs };
+}
+
+export async function repeatRenderedVideo(options: RepeatRenderedVideoOptions): Promise<void> {
+  if (options.repeatCount <= 1) {
+    if (options.inputPath !== options.outputPath) {
+      await runFfmpeg({
+        jobId: options.jobId,
+        args: ["-y", "-i", options.inputPath, "-c", "copy", "-movflags", "+faststart", options.outputPath],
+      });
+    }
+    return;
+  }
+
+  const listPath = join(options.workDir, "repeat_list.txt");
+  await writeFile(
+    listPath,
+    Array.from({ length: options.repeatCount }, () => `file '${options.inputPath.replaceAll("'", "'\\''")}'`).join("\n"),
+    "utf8"
+  );
+
+  await runFfmpeg({
+    jobId: options.jobId,
+    args: [
+      "-y",
+      "-f", "concat",
+      "-safe", "0",
+      "-i", listPath,
+      "-c", "copy",
+      "-movflags", "+faststart",
+      options.outputPath,
+    ],
+  });
 }
 
 async function createStaticImageLoopClip(

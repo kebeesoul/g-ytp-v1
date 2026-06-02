@@ -7,6 +7,7 @@ import {
   renderVideo,
   preparePngCardSpecs,
   prepareRenderVideoAssets,
+  repeatRenderedVideo,
 } from "@/lib/ffmpeg/renderVideo";
 import { extractThumbnail } from "@/lib/ffmpeg/thumbnail";
 import { masterTracksForRender } from "@/lib/mastering/renderMastering";
@@ -81,6 +82,14 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     updateJobQueue(jobId, exportId, "running", 0, null, null);
 
     snapshot = await copyImportIfNeeded(exportId, snapshot);
+    const repeatCount = snapshot.renderConfig.playlistRepeatCount;
+    const singlePassSnapshot: ProjectSnapshot = {
+      ...snapshot,
+      renderConfig: {
+        ...snapshot.renderConfig,
+        playlistRepeatCount: 1,
+      },
+    };
     await supabase
       .from("projects")
       .update({ snapshot })
@@ -101,7 +110,7 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     // PNG card generation only requires snapshot data (no downloaded files needed).
     const [audioPaths, pngCardSpecs] = await Promise.all([
       resolveTrackPaths(snapshot.tracks),
-      preparePngCardSpecs(snapshot, workDir),
+      preparePngCardSpecs(singlePassSnapshot, workDir),
     ]);
     updateJobQueue(jobId, exportId, "running", 0.05, null, null);
 
@@ -129,14 +138,13 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
         audioConfig: snapshot.renderConfig.mastering
           ? { ...snapshot.renderConfig.audio, normalize: "off" }
           : snapshot.renderConfig.audio,
-        playlistRepeatCount: snapshot.renderConfig.playlistRepeatCount,
       }),
       prepareRenderVideoAssets({
         jobId,
         bgLocalPath,
         bgKind: snapshot.background.kind,
         bgPreprocessed: !!snapshot.background.processedStoragePath,
-        snapshot,
+        snapshot: singlePassSnapshot,
         workDir,
         pngCardSpecs,
       }),
@@ -149,6 +157,8 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     await mkdir(exportDir, { recursive: true });
     const outputPath = workspacePaths.finalVideo(exportId, "mp4");
     assertInsideWorkspace(outputPath);
+    const singlePassOutputPath =
+      repeatCount > 1 ? `${workDir.replace(/\/$/, "")}/final_once.mp4` : outputPath;
 
     let lastFlush = Date.now();
     const onProgress = async (globalProgress: number, etaSec: number | null) => {
@@ -165,14 +175,24 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       bgKind: snapshot.background.kind,
       bgPreprocessed: !!snapshot.background.processedStoragePath,
       audioLocalPath: concatM4aPath,
-      outputPath,
-      snapshot,
+      outputPath: singlePassOutputPath,
+      snapshot: singlePassSnapshot,
       workDir,
       startTimeMs,
       onProgress,
       pngCardSpecs,
       preparedAssets: preparedVideoAssets,
     });
+
+    if (repeatCount > 1) {
+      await repeatRenderedVideo({
+        jobId,
+        inputPath: singlePassOutputPath,
+        outputPath,
+        workDir,
+        repeatCount,
+      });
+    }
 
     // C: Extract thumbnail and upload tracklist concurrently
     const tracklistText = generateTracklistText(snapshot);

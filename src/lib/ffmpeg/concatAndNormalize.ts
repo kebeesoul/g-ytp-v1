@@ -8,7 +8,6 @@ export interface ConcatAndNormalizeOptions {
   transition: TransitionConfig;
   workDir: string;
   audioConfig: AudioConfig;
-  playlistRepeatCount?: number;
   mastering?: boolean;
 }
 
@@ -55,7 +54,6 @@ export async function concatAndNormalize(
   options: ConcatAndNormalizeOptions
 ): Promise<string> {
   const { jobId, audioPaths, transition, workDir, audioConfig, mastering } = options;
-  const playlistRepeatCount = options.playlistRepeatCount ?? 1;
   if (audioPaths.length === 0) throw new Error("concatAndNormalize: no audio files");
 
   const outputPath = join(workDir, "concat.m4a");
@@ -99,7 +97,7 @@ export async function concatAndNormalize(
         outputPath,
       ],
     });
-    return repeatAudioIfNeeded(jobId, outputPath, workDir, playlistRepeatCount);
+    return outputPath;
   }
 
   const inputs = audioPaths.flatMap((p) => ["-i", p]);
@@ -121,7 +119,7 @@ export async function concatAndNormalize(
         outputPath,
       ],
     });
-    return repeatAudioIfNeeded(jobId, outputPath, workDir, playlistRepeatCount);
+    return outputPath;
   }
 
   const { targetLufs, truePeakDb } = audioConfig;
@@ -143,37 +141,8 @@ export async function concatAndNormalize(
         outputPath,
       ],
     });
-    return repeatAudioIfNeeded(jobId, outputPath, workDir, playlistRepeatCount);
+    return outputPath;
   }
 
   throw new Error(`unsupported normalize mode: ${audioConfig.normalize}`);
-}
-
-async function repeatAudioIfNeeded(
-  jobId: string | undefined,
-  inputPath: string,
-  workDir: string,
-  repeatCount: number
-): Promise<string> {
-  if (repeatCount <= 1) return inputPath;
-
-  const repeatedPath = join(workDir, "concat_repeated.m4a");
-  const inputs = Array.from({ length: repeatCount }, () => ["-i", inputPath]).flat();
-  const inputLabels = Array.from({ length: repeatCount }, (_, i) => `[${i}:a]`).join("");
-
-  await runFfmpeg({
-    jobId,
-    args: [
-      "-y",
-      ...inputs,
-      "-filter_complex", `${inputLabels}concat=n=${repeatCount}:v=0:a=1[aout]`,
-      "-map", "[aout]",
-      "-c:a", "aac",
-      "-ar", "48000",
-      "-b:a", AUDIO_BITRATE,
-      repeatedPath,
-    ],
-  });
-
-  return repeatedPath;
 }
