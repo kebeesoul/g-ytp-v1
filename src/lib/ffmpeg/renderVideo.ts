@@ -36,6 +36,7 @@ type RenderFilterPlan = {
 export type PreparedRenderVideoAssets = {
   bgLoopClipPath?: string;
   filterPlan?: RenderFilterPlan;
+  waveformBaked?: boolean;
 };
 
 /**
@@ -96,12 +97,19 @@ export async function prepareRenderVideoAssets(options: {
   const useVideotoolbox =
     hwaccel === "videotoolbox" && process.env.HWACCEL_DISABLED !== "1";
   const usesStaticLoop =
-    bgKind === "image" && bgPreprocessed && waveform.style === "off";
+    bgKind === "image" && bgPreprocessed;
   const isFastStaticCopy = usesStaticLoop && overlay.displayMode === "0";
+  const waveformBaked = usesStaticLoop && waveform.style !== "off";
 
   const bgLoopClipPath = usesStaticLoop ? join(workDir, "bg_loop_1s.mp4") : undefined;
   const bgLoopPromise = bgLoopClipPath
-    ? createStaticImageLoopClip(`${jobId}:bg-loop`, bgLocalPath, bgLoopClipPath, useVideotoolbox)
+    ? createStaticImageLoopClip(
+        `${jobId}:bg-loop`,
+        bgLocalPath,
+        bgLoopClipPath,
+        useVideotoolbox,
+        waveform.style
+      )
     : Promise.resolve();
 
   const filterPlanPromise = isFastStaticCopy
@@ -112,10 +120,11 @@ export async function prepareRenderVideoAssets(options: {
         pngCardSpecs: options.pngCardSpecs,
         sourcePreprocessed: bgPreprocessed,
         extraInputStartIndex: 2,
+        waveformBaked,
       });
 
   const [filterPlan] = await Promise.all([filterPlanPromise, bgLoopPromise]);
-  return { bgLoopClipPath, filterPlan };
+  return { bgLoopClipPath, filterPlan, waveformBaked };
 }
 
 export async function renderVideo(options: RenderVideoOptions): Promise<void> {
@@ -137,8 +146,7 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   if (
     bgKind === "image" &&
     bgPreprocessed &&
-    overlay.displayMode === "0" &&
-    waveform.style === "off"
+    overlay.displayMode === "0"
   ) {
     await renderStaticImageCopyPath({
       jobId,
@@ -148,8 +156,34 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       workDir,
       useVideotoolbox,
       bgLoopClipPath: options.preparedAssets?.bgLoopClipPath,
+      waveformStyle: waveform.style,
     });
     onProgress?.(1.0, null);
+    return;
+  }
+
+  const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
+  if (
+    bgKind === "image" &&
+    bgPreprocessed &&
+    preset.renderer === "png_card" &&
+    (overlay.displayMode === "2" || overlay.displayMode === "5") &&
+    options.pngCardSpecs &&
+    options.pngCardSpecs.length > 0
+  ) {
+    await renderPngOverlaySegmentCopyPath({
+      jobId,
+      bgLocalPath,
+      audioLocalPath,
+      outputPath,
+      workDir,
+      snapshot,
+      useVideotoolbox,
+      bgLoopClipPath: options.preparedAssets?.bgLoopClipPath,
+      pngCardSpecs: options.pngCardSpecs,
+      startTimeMs,
+      onProgress,
+    });
     return;
   }
 
@@ -183,36 +217,7 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     sourcePreprocessed = true;
   }
 
-  const colorArgs = [
-    "-colorspace", "bt709",
-    "-color_primaries", "bt709",
-    "-color_trc", "bt709",
-  ];
-
-  const videoCodecArgs: string[] = useVideotoolbox
-    ? [
-        "-c:v", "h264_videotoolbox",
-        "-b:v", "5M",
-        "-maxrate", "7M",
-        "-bufsize", "14M",
-        "-profile:v", "high",
-        "-level:v", "4.1",
-        "-g", "60",
-        "-r", "30",
-        ...colorArgs,
-      ]
-    : [
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-profile:v", "high",
-        "-b:v", "5M",
-        "-maxrate", "7M",
-        "-bufsize", "14M",
-        "-g", "60",
-        "-keyint_min", "15",
-        "-r", "30",
-        ...colorArgs,
-      ];
+  const videoCodecArgs = buildVideoCodecArgs(useVideotoolbox);
 
   const formatArgs = ["-movflags", "+faststart"];
 
@@ -222,6 +227,7 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     pngCardSpecs: options.pngCardSpecs,
     sourcePreprocessed,
     extraInputStartIndex,
+    waveformBaked: options.preparedAssets?.waveformBaked ?? false,
   });
 
   const filterScriptPath = join(workDir, "filters.txt");
@@ -277,6 +283,7 @@ async function renderStaticImageCopyPath(options: {
   workDir: string;
   useVideotoolbox: boolean;
   bgLoopClipPath?: string;
+  waveformStyle?: ProjectSnapshot["renderConfig"]["waveform"]["style"];
 }): Promise<void> {
   const loopClipPath = options.bgLoopClipPath ?? join(options.workDir, "bg_loop_1s.mp4");
   if (!options.bgLoopClipPath) {
@@ -284,7 +291,8 @@ async function renderStaticImageCopyPath(options: {
       options.jobId,
       options.bgLocalPath,
       loopClipPath,
-      options.useVideotoolbox
+      options.useVideotoolbox,
+      options.waveformStyle
     );
   }
 
@@ -304,14 +312,97 @@ async function renderStaticImageCopyPath(options: {
   });
 }
 
+async function renderPngOverlaySegmentCopyPath(options: {
+  jobId: string;
+  bgLocalPath: string;
+  audioLocalPath: string;
+  outputPath: string;
+  workDir: string;
+  snapshot: ProjectSnapshot;
+  useVideotoolbox: boolean;
+  bgLoopClipPath?: string;
+  pngCardSpecs: PngCardSpec[];
+  startTimeMs: number;
+  onProgress?: (globalProgress: number, etaSec: number | null) => void;
+}): Promise<void> {
+  const baseVideoPath = join(options.workDir, "base_visual_audio.mp4");
+  await renderStaticImageCopyPath({
+    jobId: options.jobId,
+    bgLocalPath: options.bgLocalPath,
+    audioLocalPath: options.audioLocalPath,
+    outputPath: baseVideoPath,
+    workDir: options.workDir,
+    useVideotoolbox: options.useVideotoolbox,
+    bgLoopClipPath: options.bgLoopClipPath,
+    waveformStyle: options.snapshot.renderConfig.waveform.style,
+  });
+
+  const totalAudioSec =
+    computePlaylistDurationSec(options.snapshot) * options.snapshot.renderConfig.playlistRepeatCount;
+  const segments = buildOverlaySegments(options.pngCardSpecs, totalAudioSec);
+  const segmentPaths: string[] = [];
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    const segmentPath = join(options.workDir, `segment_${String(i).padStart(4, "0")}.mp4`);
+    if (segment.card) {
+      await renderOverlaySegment({
+        jobId: options.jobId,
+        inputPath: baseVideoPath,
+        card: segment.card,
+        outputPath: segmentPath,
+        startSec: segment.startSec,
+        durationSec: segment.endSec - segment.startSec,
+        useVideotoolbox: options.useVideotoolbox,
+        snapshot: options.snapshot,
+      });
+    } else {
+      await copyVideoSegment({
+        jobId: options.jobId,
+        inputPath: baseVideoPath,
+        outputPath: segmentPath,
+        startSec: segment.startSec,
+        durationSec: segment.endSec - segment.startSec,
+      });
+    }
+
+    segmentPaths.push(segmentPath);
+    const globalProgress = 0.15 + ((i + 1) / segments.length) * 0.85;
+    options.onProgress?.(globalProgress, computeEtaSec(globalProgress, options.startTimeMs));
+  }
+
+  const listPath = join(options.workDir, "segments.txt");
+  await writeFile(
+    listPath,
+    segmentPaths.map((p) => `file '${p.replaceAll("'", "'\\''")}'`).join("\n"),
+    "utf8"
+  );
+
+  await runFfmpeg({
+    jobId: options.jobId,
+    args: [
+      "-y",
+      "-f", "concat",
+      "-safe", "0",
+      "-i", listPath,
+      "-c", "copy",
+      "-movflags", "+faststart",
+      options.outputPath,
+    ],
+  });
+
+  options.onProgress?.(1.0, null);
+}
+
 async function buildRenderFilterPlan(options: {
   snapshot: ProjectSnapshot;
   workDir: string;
   pngCardSpecs?: PngCardSpec[] | null;
   sourcePreprocessed: boolean;
   extraInputStartIndex: number;
+  waveformBaked?: boolean;
 }): Promise<RenderFilterPlan> {
-  const { snapshot, workDir, sourcePreprocessed, extraInputStartIndex } = options;
+  const { snapshot, workDir, sourcePreprocessed, extraInputStartIndex, waveformBaked = false } = options;
   const { tracks, renderConfig } = snapshot;
   const { transition, overlay, waveform } = renderConfig;
   const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
@@ -379,7 +470,7 @@ async function buildRenderFilterPlan(options: {
     );
   }
 
-  if (waveform.style !== "off") {
+  if (waveform.style !== "off" && !waveformBaked) {
     const waveFile = join(process.cwd(), "public", "waveforms", `${waveform.style}.mov`);
     const waveInputIdx = extraInputStartIndex + extraInputs.length / 4;
     extraInputs = [...extraInputs, "-stream_loop", "-1", "-i", waveFile];
@@ -396,9 +487,144 @@ async function createStaticImageLoopClip(
   jobId: string,
   inputPath: string,
   outputPath: string,
-  useVideotoolbox: boolean
+  useVideotoolbox: boolean,
+  waveformStyle: ProjectSnapshot["renderConfig"]["waveform"]["style"] = "off"
 ): Promise<void> {
-  const codecArgs = useVideotoolbox
+  const codecArgs = buildVideoCodecArgs(useVideotoolbox);
+  const hasWaveform = waveformStyle !== "off";
+  const waveFile = hasWaveform
+    ? join(process.cwd(), "public", "waveforms", `${waveformStyle}.mov`)
+    : null;
+
+  await runFfmpeg({
+    jobId,
+    args: [
+      "-y",
+      "-loop", "1",
+      "-i", inputPath,
+      ...(waveFile ? ["-stream_loop", "-1", "-i", waveFile] : []),
+      ...(waveFile
+        ? [
+            "-filter_complex",
+            "[0:v]copy[_bgproc];[1:v]format=rgba,scale=240:240[_wave];[_bgproc][_wave]overlay=x=(W-w)/2:y=H*0.85-h/2:format=auto:shortest=1[vout]",
+            "-map", "[vout]",
+          ]
+        : []),
+      "-t", waveFile ? "2" : "1",
+      ...codecArgs,
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      outputPath,
+    ],
+  });
+}
+
+type OverlaySegment =
+  | { startSec: number; endSec: number; card: PngCardSpec }
+  | { startSec: number; endSec: number; card: null };
+
+function buildOverlaySegments(specs: PngCardSpec[], totalDurationSec: number): OverlaySegment[] {
+  const sorted = [...specs].sort((a, b) => a.tStart - b.tStart);
+  const segments: OverlaySegment[] = [];
+  let cursor = 0;
+
+  for (const spec of sorted) {
+    const startSec = Math.max(0, spec.tStart);
+    const endSec = Math.min(totalDurationSec, spec.tEnd);
+    if (endSec <= startSec) continue;
+
+    if (startSec > cursor) {
+      segments.push({ startSec: cursor, endSec: startSec, card: null });
+    }
+
+    segments.push({ startSec, endSec, card: spec });
+    cursor = Math.max(cursor, endSec);
+  }
+
+  if (cursor < totalDurationSec) {
+    segments.push({ startSec: cursor, endSec: totalDurationSec, card: null });
+  }
+
+  return segments.filter((segment) => segment.endSec - segment.startSec > 0.01);
+}
+
+async function copyVideoSegment(options: {
+  jobId: string;
+  inputPath: string;
+  outputPath: string;
+  startSec: number;
+  durationSec: number;
+}): Promise<void> {
+  await runFfmpeg({
+    jobId: options.jobId,
+    args: [
+      "-y",
+      "-ss", options.startSec.toFixed(3),
+      "-i", options.inputPath,
+      "-t", options.durationSec.toFixed(3),
+      "-c", "copy",
+      "-avoid_negative_ts", "make_zero",
+      options.outputPath,
+    ],
+  });
+}
+
+async function renderOverlaySegment(options: {
+  jobId: string;
+  inputPath: string;
+  card: PngCardSpec;
+  outputPath: string;
+  startSec: number;
+  durationSec: number;
+  useVideotoolbox: boolean;
+  snapshot: ProjectSnapshot;
+}): Promise<void> {
+  const preset = resolveOverlayPreset(
+    options.snapshot.renderConfig.overlay.presetId,
+    options.snapshot.renderConfig.overlay.presetVersion
+  );
+  const localSpec: PngCardSpec = {
+    ...options.card,
+    tStart: 0,
+    tEnd: options.durationSec,
+  };
+  const overlayLines = buildPngCardOverlayLines([localSpec], 1, preset);
+  const filterScriptPath = options.outputPath.replace(/\.mp4$/, ".txt");
+  await writeFile(
+    filterScriptPath,
+    `[0:v]copy[_bgproc];\n${overlayLines.join(";\n")}`,
+    "utf8"
+  );
+
+  await runFfmpeg({
+    jobId: options.jobId,
+    args: [
+      "-y",
+      "-ss", options.startSec.toFixed(3),
+      "-i", options.inputPath,
+      "-loop", "1",
+      "-i", options.card.localPath,
+      "-t", options.durationSec.toFixed(3),
+      "-filter_complex_script", filterScriptPath,
+      "-map", "[vout]",
+      "-map", "0:a",
+      ...buildVideoCodecArgs(options.useVideotoolbox),
+      "-pix_fmt", "yuv420p",
+      "-c:a", "copy",
+      "-avoid_negative_ts", "make_zero",
+      options.outputPath,
+    ],
+  });
+}
+
+function buildVideoCodecArgs(useVideotoolbox: boolean): string[] {
+  const colorArgs = [
+    "-colorspace", "bt709",
+    "-color_primaries", "bt709",
+    "-color_trc", "bt709",
+  ];
+
+  return useVideotoolbox
     ? [
         "-c:v", "h264_videotoolbox",
         "-b:v", "5M",
@@ -406,23 +632,22 @@ async function createStaticImageLoopClip(
         "-bufsize", "14M",
         "-profile:v", "high",
         "-level:v", "4.1",
+        "-g", "60",
+        "-r", "30",
+        ...colorArgs,
       ]
-    : ["-c:v", "libx264", "-preset", "fast", "-profile:v", "high", "-b:v", "5M"];
-
-  await runFfmpeg({
-    jobId,
-    args: [
-      "-y",
-      "-loop", "1",
-      "-t", "1",
-      "-i", inputPath,
-      ...codecArgs,
-      "-r", "30",
-      "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
-      outputPath,
-    ],
-  });
+    : [
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-profile:v", "high",
+        "-b:v", "5M",
+        "-maxrate", "7M",
+        "-bufsize", "14M",
+        "-g", "60",
+        "-keyint_min", "15",
+        "-r", "30",
+        ...colorArgs,
+      ];
 }
 
 function computePlaylistDurationSec(snapshot: ProjectSnapshot): number {

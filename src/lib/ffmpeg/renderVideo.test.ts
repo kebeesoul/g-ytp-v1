@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ProjectSnapshot } from "@/lib/schema";
 import { prepareRenderVideoAssets, renderVideo } from "./renderVideo";
+import type { PngCardSpec } from "./overlayPngRenderer";
 import { runFfmpeg } from "./runFfmpeg";
 
 vi.mock("./runFfmpeg", () => ({
@@ -85,5 +89,70 @@ describe("renderVideo", () => {
     expect(assets.bgLoopClipPath).toBe("/tmp/work/bg_loop_1s.mp4");
     expect(assets.filterPlan).toBeUndefined();
     expect(runFfmpeg).toHaveBeenCalledTimes(1);
+  });
+
+  it("bakes waveform into the static loop and keeps the final stream-copy path", async () => {
+    const snapshot: ProjectSnapshot = {
+      ...baseSnapshot,
+      renderConfig: {
+        ...baseSnapshot.renderConfig,
+        waveform: { style: "wave1" },
+      },
+    };
+
+    await renderVideo({
+      jobId: "job",
+      bgLocalPath: "/tmp/bg_processed.jpg",
+      bgKind: "image",
+      bgPreprocessed: true,
+      audioLocalPath: "/tmp/concat.m4a",
+      outputPath: "/tmp/final.mp4",
+      snapshot,
+      workDir: "/tmp/work",
+      startTimeMs: Date.now(),
+    });
+
+    expect(runFfmpeg).toHaveBeenCalledTimes(2);
+    const loopArgs = vi.mocked(runFfmpeg).mock.calls[0]?.[0].args;
+    const finalArgs = vi.mocked(runFfmpeg).mock.calls[1]?.[0].args;
+    expect(loopArgs?.join(" ")).toContain("public/waveforms/wave1.mov");
+    expect(finalArgs).toContain("-c:v");
+    expect(finalArgs).toContain("copy");
+  });
+
+  it("uses segment concat path for short png-card overlay windows", async () => {
+    const workDir = await mkdtemp(join(tmpdir(), "gytp-render-test-"));
+    const snapshot: ProjectSnapshot = {
+      ...baseSnapshot,
+      renderConfig: {
+        ...baseSnapshot.renderConfig,
+        overlay: { displayMode: "5", presetId: "default", presetVersion: 1 },
+      },
+    };
+    const card: PngCardSpec = {
+      localPath: join(workDir, "card_0_0.png"),
+      track: snapshot.tracks[0],
+      tStart: 0,
+      tEnd: 5,
+      fadeOut: true,
+    };
+
+    await renderVideo({
+      jobId: "job",
+      bgLocalPath: "/tmp/bg_processed.jpg",
+      bgKind: "image",
+      bgPreprocessed: true,
+      audioLocalPath: "/tmp/concat.m4a",
+      outputPath: join(workDir, "final.mp4"),
+      snapshot,
+      workDir,
+      startTimeMs: Date.now(),
+      pngCardSpecs: [card],
+    });
+
+    const calls = vi.mocked(runFfmpeg).mock.calls.map((call) => call[0].args.join(" "));
+    expect(calls.some((args) => args.includes("-filter_complex_script"))).toBe(true);
+    expect(calls.at(-1)).toContain("-f concat");
+    expect(calls.at(-1)).toContain("segments.txt");
   });
 });
