@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
@@ -166,8 +167,10 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [hydrateLoading, setHydrateLoading] = useState(!!fromId);
   const [ffmpegWarning, setFfmpegWarning] = useState<string | null>(null);
   const [presetLoadWarning, setPresetLoadWarning] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const hydratedRef = useRef(false);
+  const router = useRouter();
 
   // Persist editor state to localStorage on every relevant change (skip when viewing a saved project)
   useEffect(() => {
@@ -356,6 +359,12 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
     }
   }
 
+  function handleClearAll() {
+    window.localStorage.removeItem(EDITOR_DRAFT_KEY);
+    window.localStorage.removeItem(SELECTED_THUMBNAIL_KEY);
+    router.push("/editor");
+  }
+
   function parseHashtagInput(value: string): string[] {
     return value
       .split(",")
@@ -455,6 +464,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             )}
           </div>
 
+          <AudioPlayer storagePath={activeStoragePath} trackId={activeTrackId} />
+
           <TrackList
             tracks={tracks}
             activeTrackId={activeTrackId}
@@ -469,9 +480,39 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             <TracklistExport snapshot={snapshot as ProjectSnapshot} />
           )}
 
-          <AudioPlayer storagePath={activeStoragePath} trackId={activeTrackId} />
+          {/* Clear all — reset to fresh editor */}
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            className="w-full border border-[var(--vm-border)] bg-transparent px-3 py-2 text-xs uppercase tracking-[0.12em] text-[var(--vm-subtle)] hover:border-[var(--vm-error)] hover:text-[var(--vm-error)] transition-colors"
+          >
+            Clear
+          </button>
         </div>
       </aside>
+
+      {/* Clear 확인 팝업 */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="flex flex-col gap-4 rounded border border-[var(--vm-border)] bg-[#0d0d0d] p-5 shadow-xl">
+            <p className="text-sm text-[var(--vm-text)]">플레이리스트를 초기화할까요?</p>
+            <p className="text-[11px] text-[var(--vm-subtle)]">현재 작업이 모두 삭제됩니다.</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="vm-button-secondary px-4 py-1.5 text-xs"
+              >
+                No
+              </button>
+              <button
+                onClick={handleClearAll}
+                className="border border-[#5a2a2a] bg-[#1e0a0a] px-4 py-1.5 text-xs text-[var(--vm-error)] hover:bg-[#2a0f0f]"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="vm-main">
         {ffmpegWarning && (

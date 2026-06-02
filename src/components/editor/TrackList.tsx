@@ -143,6 +143,16 @@ export function TrackList({
         <span className="vm-label">Source Tracks</span>
         <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--vm-muted)]">
           {String(tracks.length).padStart(2, "0")} files
+          {tracks.length > 0 && (
+            <span className="ml-2 text-[var(--vm-subtle)]">
+              {(() => {
+                const total = Math.round(tracks.reduce((s, t) => s + t.durationSec, 0));
+                const m = Math.floor(total / 60);
+                const s = total % 60;
+                return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+              })()}
+            </span>
+          )}
         </span>
       </div>
       <DndContext
