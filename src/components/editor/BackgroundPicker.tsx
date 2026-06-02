@@ -78,10 +78,12 @@ export function BackgroundPicker({
       const video = document.createElement("video");
       video.crossOrigin = "anonymous";
       video.muted = true;
+      video.preload = "metadata";
       video.src = publicUrl;
-      video.currentTime = 0;
+      // loadeddata fires once enough data is buffered to render the first frame.
+      // seeked at t=0 is unreliable across browsers — the event may not fire.
       video.addEventListener(
-        "seeked",
+        "loadeddata",
         () => {
           drawCoverVideo(ctx, video, canvas.width, canvas.height, DIM_DEFAULT);
         },
