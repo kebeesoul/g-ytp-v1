@@ -25,7 +25,18 @@ export interface RenderVideoOptions {
   onProgress?: (globalProgress: number, etaSec: number | null) => void;
   /** Pre-computed PNG card specs from preparePngCardSpecs(). Skip regeneration if provided. */
   pngCardSpecs?: PngCardSpec[] | null;
+  preparedAssets?: PreparedRenderVideoAssets;
 }
+
+type RenderFilterPlan = {
+  filterScript: string;
+  extraInputs: string[];
+};
+
+export type PreparedRenderVideoAssets = {
+  bgLoopClipPath?: string;
+  filterPlan?: RenderFilterPlan;
+};
 
 /**
  * Build and generate PNG card overlays for the given snapshot.
@@ -71,23 +82,54 @@ export async function preparePngCardSpecs(
   return specs;
 }
 
+export async function prepareRenderVideoAssets(options: {
+  jobId: string;
+  bgLocalPath: string;
+  bgKind: "image" | "video";
+  bgPreprocessed?: boolean;
+  snapshot: ProjectSnapshot;
+  workDir: string;
+  pngCardSpecs?: PngCardSpec[] | null;
+}): Promise<PreparedRenderVideoAssets> {
+  const { jobId, bgLocalPath, bgKind, bgPreprocessed = false, snapshot, workDir } = options;
+  const { overlay, waveform, hwaccel } = snapshot.renderConfig;
+  const useVideotoolbox =
+    hwaccel === "videotoolbox" && process.env.HWACCEL_DISABLED !== "1";
+  const usesStaticLoop =
+    bgKind === "image" && bgPreprocessed && waveform.style === "off";
+  const isFastStaticCopy = usesStaticLoop && overlay.displayMode === "0";
+
+  const bgLoopClipPath = usesStaticLoop ? join(workDir, "bg_loop_1s.mp4") : undefined;
+  const bgLoopPromise = bgLoopClipPath
+    ? createStaticImageLoopClip(`${jobId}:bg-loop`, bgLocalPath, bgLoopClipPath, useVideotoolbox)
+    : Promise.resolve();
+
+  const filterPlanPromise = isFastStaticCopy
+    ? Promise.resolve(undefined)
+    : buildRenderFilterPlan({
+        snapshot,
+        workDir,
+        pngCardSpecs: options.pngCardSpecs,
+        sourcePreprocessed: bgPreprocessed,
+        extraInputStartIndex: 2,
+      });
+
+  const [filterPlan] = await Promise.all([filterPlanPromise, bgLoopPromise]);
+  return { bgLoopClipPath, filterPlan };
+}
+
 export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   const {
     jobId, bgLocalPath, bgKind, audioLocalPath, outputPath,
     bgPreprocessed = false, snapshot, workDir, startTimeMs, onProgress,
   } = options;
 
-  const { tracks, renderConfig } = snapshot;
-  const { transition, overlay, waveform, hwaccel } = renderConfig;
-  const bg = snapshot.background;
+  const { renderConfig } = snapshot;
+  const { overlay, waveform, hwaccel } = renderConfig;
   const repeatCount = renderConfig.playlistRepeatCount;
 
-  const timings = computeTrackTimings(tracks, transition);
-  const trackStartSecs = timings.map((t) => t.startSec);
   const baseDurationSec = computePlaylistDurationSec(snapshot);
   const totalAudioSec = baseDurationSec * repeatCount;
-
-  const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
 
   const useVideotoolbox =
     hwaccel === "videotoolbox" && process.env.HWACCEL_DISABLED !== "1";
@@ -105,6 +147,7 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       outputPath,
       workDir,
       useVideotoolbox,
+      bgLoopClipPath: options.preparedAssets?.bgLoopClipPath,
     });
     onProgress?.(1.0, null);
     return;
@@ -113,7 +156,7 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   let mainInput: string[] = bgKind === "video"
     ? [
         ...(useVideotoolbox
-          ? ["-hwaccel", "videotoolbox", "-hwaccel_output_format", "nv12"]
+          ? ["-hwaccel", "videotoolbox"]
           : []),
         "-stream_loop", "-1", "-i", bgLocalPath,
       ]
@@ -129,26 +172,14 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
     overlay.displayMode !== "0" &&
     waveform.style === "off"
   ) {
-    const loopClipPath = join(workDir, "bg_loop_1s.mp4");
-    const basePath = join(workDir, "base_static_bg.mp4");
-    await createStaticImageLoopClip(jobId, bgLocalPath, loopClipPath, useVideotoolbox);
-    await runFfmpeg({
-      jobId,
-      args: [
-        "-y",
-        "-stream_loop", "-1",
-        "-i", loopClipPath,
-        "-i", audioLocalPath,
-        "-c:v", "copy",
-        "-c:a", "copy",
-        "-shortest",
-        basePath,
-      ],
-    });
-    mainInput = ["-i", basePath];
-    audioInput = [];
-    audioMap = "0:a";
-    extraInputStartIndex = 1;
+    const loopClipPath = options.preparedAssets?.bgLoopClipPath ?? join(workDir, "bg_loop_1s.mp4");
+    if (!options.preparedAssets?.bgLoopClipPath) {
+      await createStaticImageLoopClip(jobId, bgLocalPath, loopClipPath, useVideotoolbox);
+    }
+    mainInput = ["-stream_loop", "-1", "-i", loopClipPath];
+    audioInput = ["-i", audioLocalPath];
+    audioMap = "1:a";
+    extraInputStartIndex = 2;
     sourcePreprocessed = true;
   }
 
@@ -185,83 +216,22 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
 
   const formatArgs = ["-movflags", "+faststart"];
 
-  let filterScript: string;
-  let extraInputs: string[] = [];
-  const visualOutputLabel = waveform.style === "off" ? "vout" : "_visualbase";
-
-  if (preset.renderer === "png_card" && overlay.displayMode !== "0") {
-    // Use pre-computed specs (from preparePngCardSpecs run concurrently with downloads),
-    // or fall back to generating them inline.
-    let specs: PngCardSpec[];
-    if (options.pngCardSpecs !== undefined && options.pngCardSpecs !== null) {
-      specs = options.pngCardSpecs;
-    } else {
-      const built: PngCardSpec[] = [];
-      for (let cycle = 0; cycle < repeatCount; cycle++) {
-        const cycleOffset = cycle * baseDurationSec;
-        for (let i = 0; i < tracks.length; i++) {
-          const timing = resolveOverlayTimings(
-            trackStartSecs[i] + cycleOffset,
-            tracks[i].durationSec,
-            overlay.displayMode
-          );
-          if (timing.skip) continue;
-          built.push({
-            localPath: join(workDir, `card_${cycle}_${i}.png`),
-            track: tracks[i],
-            tStart: timing.tStart,
-            tEnd: timing.tEnd,
-            fadeOut: timing.fadeOut,
-          });
-        }
-      }
-      await generatePngCards(built, preset);
-      specs = built;
-    }
-
-    const bgFilter = buildBgFilter(bg, sourcePreprocessed);
-
-    if (specs.length === 0) {
-      filterScript = `${bgFilter};\n[_bgproc]copy[${visualOutputLabel}]`;
-    } else {
-      extraInputs = specs.flatMap((spec) => ["-loop", "1", "-i", spec.localPath]);
-      const overlayLines = buildPngCardOverlayLines(
-        specs,
-        extraInputStartIndex,
-        preset,
-        visualOutputLabel
-      );
-      filterScript = `${bgFilter};\n${overlayLines.join(";\n")}`;
-    }
-  } else {
-    // drawtext path (or displayMode "0")
-    const overlayFilters = compileOverlayFilters(
-      tracks,
-      trackStartSecs,
-      overlay.displayMode,
-      preset
-    );
-    filterScript = buildFilterScript(bg, overlayFilters, visualOutputLabel, sourcePreprocessed);
-  }
-
-  if (waveform.style !== "off") {
-    const waveFile = join(process.cwd(), "public", "waveforms", `${waveform.style}.mov`);
-    const waveInputIdx = extraInputStartIndex + extraInputs.length / 4;
-    extraInputs = [...extraInputs, "-stream_loop", "-1", "-i", waveFile];
-    filterScript =
-      `${filterScript};\n` +
-      `[${waveInputIdx}:v]format=rgba,scale=240:240[_wave];\n` +
-      `[${visualOutputLabel}][_wave]overlay=x=(W-w)/2:y=H*0.85-h/2:format=auto:shortest=1[vout]`;
-  }
+  const filterPlan = options.preparedAssets?.filterPlan ?? await buildRenderFilterPlan({
+    snapshot,
+    workDir,
+    pngCardSpecs: options.pngCardSpecs,
+    sourcePreprocessed,
+    extraInputStartIndex,
+  });
 
   const filterScriptPath = join(workDir, "filters.txt");
-  await writeFile(filterScriptPath, filterScript, "utf8");
+  await writeFile(filterScriptPath, filterPlan.filterScript, "utf8");
 
   const args: string[] = [
     "-y",
     ...mainInput,
     ...audioInput,
-    ...extraInputs,
+    ...filterPlan.extraInputs,
     "-filter_complex_script", filterScriptPath,
     "-map", "[vout]",
     "-map", audioMap,
@@ -306,14 +276,17 @@ async function renderStaticImageCopyPath(options: {
   outputPath: string;
   workDir: string;
   useVideotoolbox: boolean;
+  bgLoopClipPath?: string;
 }): Promise<void> {
-  const loopClipPath = join(options.workDir, "bg_loop_1s.mp4");
-  await createStaticImageLoopClip(
-    options.jobId,
-    options.bgLocalPath,
-    loopClipPath,
-    options.useVideotoolbox
-  );
+  const loopClipPath = options.bgLoopClipPath ?? join(options.workDir, "bg_loop_1s.mp4");
+  if (!options.bgLoopClipPath) {
+    await createStaticImageLoopClip(
+      options.jobId,
+      options.bgLocalPath,
+      loopClipPath,
+      options.useVideotoolbox
+    );
+  }
 
   await runFfmpeg({
     jobId: options.jobId,
@@ -329,6 +302,94 @@ async function renderStaticImageCopyPath(options: {
       options.outputPath,
     ],
   });
+}
+
+async function buildRenderFilterPlan(options: {
+  snapshot: ProjectSnapshot;
+  workDir: string;
+  pngCardSpecs?: PngCardSpec[] | null;
+  sourcePreprocessed: boolean;
+  extraInputStartIndex: number;
+}): Promise<RenderFilterPlan> {
+  const { snapshot, workDir, sourcePreprocessed, extraInputStartIndex } = options;
+  const { tracks, renderConfig } = snapshot;
+  const { transition, overlay, waveform } = renderConfig;
+  const preset = resolveOverlayPreset(overlay.presetId, overlay.presetVersion);
+  const repeatCount = renderConfig.playlistRepeatCount;
+  const timings = computeTrackTimings(tracks, transition);
+  const trackStartSecs = timings.map((t) => t.startSec);
+  const baseDurationSec = computePlaylistDurationSec(snapshot);
+  const visualOutputLabel = waveform.style === "off" ? "vout" : "_visualbase";
+  let filterScript: string;
+  let extraInputs: string[] = [];
+
+  if (preset.renderer === "png_card" && overlay.displayMode !== "0") {
+    let specs: PngCardSpec[];
+    if (options.pngCardSpecs !== undefined && options.pngCardSpecs !== null) {
+      specs = options.pngCardSpecs;
+    } else {
+      const built: PngCardSpec[] = [];
+      for (let cycle = 0; cycle < repeatCount; cycle++) {
+        const cycleOffset = cycle * baseDurationSec;
+        for (let i = 0; i < tracks.length; i++) {
+          const timing = resolveOverlayTimings(
+            trackStartSecs[i] + cycleOffset,
+            tracks[i].durationSec,
+            overlay.displayMode
+          );
+          if (timing.skip) continue;
+          built.push({
+            localPath: join(workDir, `card_${cycle}_${i}.png`),
+            track: tracks[i],
+            tStart: timing.tStart,
+            tEnd: timing.tEnd,
+            fadeOut: timing.fadeOut,
+          });
+        }
+      }
+      await generatePngCards(built, preset);
+      specs = built;
+    }
+
+    const bgFilter = buildBgFilter(snapshot.background, sourcePreprocessed);
+    if (specs.length === 0) {
+      filterScript = `${bgFilter};\n[_bgproc]copy[${visualOutputLabel}]`;
+    } else {
+      extraInputs = specs.flatMap((spec) => ["-loop", "1", "-i", spec.localPath]);
+      const overlayLines = buildPngCardOverlayLines(
+        specs,
+        extraInputStartIndex,
+        preset,
+        visualOutputLabel
+      );
+      filterScript = `${bgFilter};\n${overlayLines.join(";\n")}`;
+    }
+  } else {
+    const overlayFilters = compileOverlayFilters(
+      tracks,
+      trackStartSecs,
+      overlay.displayMode,
+      preset
+    );
+    filterScript = buildFilterScript(
+      snapshot.background,
+      overlayFilters,
+      visualOutputLabel,
+      sourcePreprocessed
+    );
+  }
+
+  if (waveform.style !== "off") {
+    const waveFile = join(process.cwd(), "public", "waveforms", `${waveform.style}.mov`);
+    const waveInputIdx = extraInputStartIndex + extraInputs.length / 4;
+    extraInputs = [...extraInputs, "-stream_loop", "-1", "-i", waveFile];
+    filterScript =
+      `${filterScript};\n` +
+      `[${waveInputIdx}:v]format=rgba,scale=240:240[_wave];\n` +
+      `[${visualOutputLabel}][_wave]overlay=x=(W-w)/2:y=H*0.85-h/2:format=auto:shortest=1[vout]`;
+  }
+
+  return { filterScript, extraInputs };
 }
 
 async function createStaticImageLoopClip(

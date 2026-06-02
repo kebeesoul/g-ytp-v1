@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectSnapshot } from "@/lib/schema";
-import { renderVideo } from "./renderVideo";
+import { prepareRenderVideoAssets, renderVideo } from "./renderVideo";
 import { runFfmpeg } from "./runFfmpeg";
 
 vi.mock("./runFfmpeg", () => ({
@@ -70,5 +70,20 @@ describe("renderVideo", () => {
     expect(finalArgs).toContain("-c:v");
     expect(finalArgs).toContain("copy");
     expect(finalArgs).toContain("-c:a");
+  });
+
+  it("prepares static image loop clip before audio-dependent render work", async () => {
+    const assets = await prepareRenderVideoAssets({
+      jobId: "job",
+      bgLocalPath: "/tmp/bg_processed.jpg",
+      bgKind: "image",
+      bgPreprocessed: true,
+      snapshot: baseSnapshot,
+      workDir: "/tmp/work",
+    });
+
+    expect(assets.bgLoopClipPath).toBe("/tmp/work/bg_loop_1s.mp4");
+    expect(assets.filterPlan).toBeUndefined();
+    expect(runFfmpeg).toHaveBeenCalledTimes(1);
   });
 });

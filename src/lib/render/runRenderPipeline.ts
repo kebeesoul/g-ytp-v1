@@ -3,7 +3,11 @@ import { basename, dirname } from "node:path";
 import { supabaseServer } from "@/lib/supabase/server";
 import { uploadToStorage } from "@/lib/supabase/storage";
 import { concatAndNormalize } from "@/lib/ffmpeg/concatAndNormalize";
-import { renderVideo, preparePngCardSpecs } from "@/lib/ffmpeg/renderVideo";
+import {
+  renderVideo,
+  preparePngCardSpecs,
+  prepareRenderVideoAssets,
+} from "@/lib/ffmpeg/renderVideo";
 import { extractThumbnail } from "@/lib/ffmpeg/thumbnail";
 import { masterTracksForRender } from "@/lib/mastering/renderMastering";
 import { generateTracklistText } from "@/lib/tracklist";
@@ -116,17 +120,27 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       await flushProgressToDB(jobId, 0.1, null);
     }
 
-    // B: Concat + normalize in one pipeline — no intermediate WAV file
-    const concatM4aPath = await concatAndNormalize({
-      jobId,
-      audioPaths: renderAudioPaths,
-      transition: snapshot.renderConfig.transition,
-      workDir,
-      audioConfig: snapshot.renderConfig.mastering
-        ? { ...snapshot.renderConfig.audio, normalize: "off" }
-        : snapshot.renderConfig.audio,
-      playlistRepeatCount: snapshot.renderConfig.playlistRepeatCount,
-    });
+    const [concatM4aPath, preparedVideoAssets] = await Promise.all([
+      concatAndNormalize({
+        jobId,
+        audioPaths: renderAudioPaths,
+        transition: snapshot.renderConfig.transition,
+        workDir,
+        audioConfig: snapshot.renderConfig.mastering
+          ? { ...snapshot.renderConfig.audio, normalize: "off" }
+          : snapshot.renderConfig.audio,
+        playlistRepeatCount: snapshot.renderConfig.playlistRepeatCount,
+      }),
+      prepareRenderVideoAssets({
+        jobId,
+        bgLocalPath,
+        bgKind: snapshot.background.kind,
+        bgPreprocessed: !!snapshot.background.processedStoragePath,
+        snapshot,
+        workDir,
+        pngCardSpecs,
+      }),
+    ]);
     updateJobQueue(jobId, exportId, "running", 0.15, null, null);
     await flushProgressToDB(jobId, 0.15, null);
 
@@ -157,6 +171,7 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       startTimeMs,
       onProgress,
       pngCardSpecs,
+      preparedAssets: preparedVideoAssets,
     });
 
     // C: Extract thumbnail and upload tracklist concurrently
