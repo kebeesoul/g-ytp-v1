@@ -49,6 +49,12 @@ function validateLocalInputFiles(snapshot: z.infer<typeof ProjectSnapshotSchema>
     if (!fileExists(path)) {
       return `배경 이미지/영상 파일이 로컬 workspace에 없습니다. Visual Source에 다시 업로드해주세요: ${snapshot.background.storagePath}`;
     }
+    if (snapshot.background.processedStoragePath) {
+      const processedPath = resolveStoragePath(snapshot.background.processedStoragePath);
+      if (!fileExists(processedPath)) {
+        return `전처리된 배경 파일이 로컬 workspace에 없습니다. Visual Source에 다시 업로드해주세요: ${snapshot.background.processedStoragePath}`;
+      }
+    }
   }
 
   return null;

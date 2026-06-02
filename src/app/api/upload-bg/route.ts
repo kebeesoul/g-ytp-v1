@@ -2,6 +2,7 @@ import { z } from "zod";
 import fs from "node:fs/promises";
 import { BackgroundSchema } from "@/lib/schema";
 import { probeMediaFile } from "@/lib/ffmpeg/probe";
+import { preprocessBackground } from "@/lib/ffmpeg/preprocessBg";
 import { ensureBootCleanup } from "@/lib/render/bootCleanup";
 import { applyBgDefaults } from "@/lib/backgroundDefaults";
 import { assertInsideWorkspace, resolveStoragePath, workspacePaths } from "@/lib/workspace";
@@ -79,8 +80,13 @@ export async function POST(req: Request): Promise<Response> {
     durationSec = probe.durationSec;
   }
 
+  const processed = await preprocessBackground(dest, kind, 0.25, importDir);
+  const processedExt = kind === "image" ? "jpg" : "mp4";
+  const processedStoragePath = `import/${sessionId.data}/bg_processed.${processedExt}`;
+  durationSec = processed.durationSec ?? durationSec;
+
   const background = BackgroundSchema.parse(
-    applyBgDefaults({ kind, storagePath, durationSec })
+    applyBgDefaults({ kind, storagePath, processedStoragePath, durationSec })
   );
 
   return Response.json(background);

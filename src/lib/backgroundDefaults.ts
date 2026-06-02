@@ -12,7 +12,10 @@ export const BG_DEFAULTS = {
 };
 
 export function applyBgDefaults(
-  partial: Pick<Background, "kind" | "storagePath"> & { durationSec?: number }
+  partial: Pick<Background, "kind" | "storagePath"> & {
+    processedStoragePath?: string;
+    durationSec?: number;
+  }
 ): Background {
   return {
     ...BG_DEFAULTS,

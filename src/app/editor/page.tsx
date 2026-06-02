@@ -38,7 +38,7 @@ const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
   waveform: { style: "off" },
   playlistRepeatCount: 1,
   mastering: false,
-  audioBitrateKbps: 384,
+  audioBitrateKbps: 192,
   resolution: [1920, 1080],
   hwaccel: "videotoolbox",
 };

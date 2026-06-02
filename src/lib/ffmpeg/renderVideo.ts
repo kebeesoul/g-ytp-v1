@@ -16,6 +16,7 @@ export interface RenderVideoOptions {
   jobId: string;
   bgLocalPath: string;
   bgKind: "image" | "video";
+  bgPreprocessed?: boolean;
   audioLocalPath: string;
   outputPath: string;
   snapshot: ProjectSnapshot;
@@ -73,7 +74,7 @@ export async function preparePngCardSpecs(
 export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   const {
     jobId, bgLocalPath, bgKind, audioLocalPath, outputPath,
-    snapshot, workDir, startTimeMs, onProgress,
+    bgPreprocessed = false, snapshot, workDir, startTimeMs, onProgress,
   } = options;
 
   const { tracks, renderConfig } = snapshot;
@@ -91,8 +92,25 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   const useVideotoolbox =
     hwaccel === "videotoolbox" && process.env.HWACCEL_DISABLED !== "1";
 
-  // Hardware decode for video backgrounds (VideoToolbox, nv12 keeps frames CPU-accessible).
-  const bgInput: string[] = bgKind === "video"
+  if (
+    bgKind === "image" &&
+    bgPreprocessed &&
+    overlay.displayMode === "0" &&
+    waveform.style === "off"
+  ) {
+    await renderStaticImageCopyPath({
+      jobId,
+      bgLocalPath,
+      audioLocalPath,
+      outputPath,
+      workDir,
+      useVideotoolbox,
+    });
+    onProgress?.(1.0, null);
+    return;
+  }
+
+  let mainInput: string[] = bgKind === "video"
     ? [
         ...(useVideotoolbox
           ? ["-hwaccel", "videotoolbox", "-hwaccel_output_format", "nv12"]
@@ -100,6 +118,39 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
         "-stream_loop", "-1", "-i", bgLocalPath,
       ]
     : ["-loop", "1", "-i", bgLocalPath];
+  let audioInput: string[] = ["-i", audioLocalPath];
+  let audioMap = "1:a";
+  let extraInputStartIndex = 2;
+  let sourcePreprocessed = bgPreprocessed;
+
+  if (
+    bgKind === "image" &&
+    bgPreprocessed &&
+    overlay.displayMode !== "0" &&
+    waveform.style === "off"
+  ) {
+    const loopClipPath = join(workDir, "bg_loop_1s.mp4");
+    const basePath = join(workDir, "base_static_bg.mp4");
+    await createStaticImageLoopClip(jobId, bgLocalPath, loopClipPath, useVideotoolbox);
+    await runFfmpeg({
+      jobId,
+      args: [
+        "-y",
+        "-stream_loop", "-1",
+        "-i", loopClipPath,
+        "-i", audioLocalPath,
+        "-c:v", "copy",
+        "-c:a", "copy",
+        "-shortest",
+        basePath,
+      ],
+    });
+    mainInput = ["-i", basePath];
+    audioInput = [];
+    audioMap = "0:a";
+    extraInputStartIndex = 1;
+    sourcePreprocessed = true;
+  }
 
   const colorArgs = [
     "-colorspace", "bt709",
@@ -110,8 +161,11 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   const videoCodecArgs: string[] = useVideotoolbox
     ? [
         "-c:v", "h264_videotoolbox",
+        "-b:v", "5M",
+        "-maxrate", "7M",
+        "-bufsize", "14M",
         "-profile:v", "high",
-        "-b:v", "16M",
+        "-level:v", "4.1",
         "-g", "60",
         "-r", "30",
         ...colorArgs,
@@ -120,9 +174,9 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
         "-c:v", "libx264",
         "-preset", "fast",
         "-profile:v", "high",
-        "-b:v", "16M",
-        "-maxrate", "20M",
-        "-bufsize", "32M",
+        "-b:v", "5M",
+        "-maxrate", "7M",
+        "-bufsize", "14M",
         "-g", "60",
         "-keyint_min", "15",
         "-r", "30",
@@ -165,13 +219,18 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       specs = built;
     }
 
-    const bgFilter = buildBgFilter(bg);
+    const bgFilter = buildBgFilter(bg, sourcePreprocessed);
 
     if (specs.length === 0) {
       filterScript = `${bgFilter};\n[_bgproc]copy[${visualOutputLabel}]`;
     } else {
       extraInputs = specs.flatMap((spec) => ["-loop", "1", "-i", spec.localPath]);
-      const overlayLines = buildPngCardOverlayLines(specs, 2, preset, visualOutputLabel);
+      const overlayLines = buildPngCardOverlayLines(
+        specs,
+        extraInputStartIndex,
+        preset,
+        visualOutputLabel
+      );
       filterScript = `${bgFilter};\n${overlayLines.join(";\n")}`;
     }
   } else {
@@ -182,13 +241,12 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
       overlay.displayMode,
       preset
     );
-    filterScript = buildFilterScript(bg, overlayFilters, visualOutputLabel);
+    filterScript = buildFilterScript(bg, overlayFilters, visualOutputLabel, sourcePreprocessed);
   }
 
   if (waveform.style !== "off") {
     const waveFile = join(process.cwd(), "public", "waveforms", `${waveform.style}.mov`);
-    // Input index: 0=bg, 1=audio, 2..N=PNG cards (4 tokens each = -loop 1 -i <path>)
-    const waveInputIdx = 2 + extraInputs.length / 4;
+    const waveInputIdx = extraInputStartIndex + extraInputs.length / 4;
     extraInputs = [...extraInputs, "-stream_loop", "-1", "-i", waveFile];
     filterScript =
       `${filterScript};\n` +
@@ -201,12 +259,12 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
 
   const args: string[] = [
     "-y",
-    ...bgInput,
-    "-i", audioLocalPath,
+    ...mainInput,
+    ...audioInput,
     ...extraInputs,
     "-filter_complex_script", filterScriptPath,
     "-map", "[vout]",
-    "-map", "1:a",
+    "-map", audioMap,
     ...videoCodecArgs,
     "-pix_fmt", "yuv420p",
     "-c:a", "copy",
@@ -241,6 +299,71 @@ export async function renderVideo(options: RenderVideoOptions): Promise<void> {
   onProgress?.(1.0, null);
 }
 
+async function renderStaticImageCopyPath(options: {
+  jobId: string;
+  bgLocalPath: string;
+  audioLocalPath: string;
+  outputPath: string;
+  workDir: string;
+  useVideotoolbox: boolean;
+}): Promise<void> {
+  const loopClipPath = join(options.workDir, "bg_loop_1s.mp4");
+  await createStaticImageLoopClip(
+    options.jobId,
+    options.bgLocalPath,
+    loopClipPath,
+    options.useVideotoolbox
+  );
+
+  await runFfmpeg({
+    jobId: options.jobId,
+    args: [
+      "-y",
+      "-stream_loop", "-1",
+      "-i", loopClipPath,
+      "-i", options.audioLocalPath,
+      "-c:v", "copy",
+      "-c:a", "copy",
+      "-shortest",
+      "-movflags", "+faststart",
+      options.outputPath,
+    ],
+  });
+}
+
+async function createStaticImageLoopClip(
+  jobId: string,
+  inputPath: string,
+  outputPath: string,
+  useVideotoolbox: boolean
+): Promise<void> {
+  const codecArgs = useVideotoolbox
+    ? [
+        "-c:v", "h264_videotoolbox",
+        "-b:v", "5M",
+        "-maxrate", "7M",
+        "-bufsize", "14M",
+        "-profile:v", "high",
+        "-level:v", "4.1",
+      ]
+    : ["-c:v", "libx264", "-preset", "fast", "-profile:v", "high", "-b:v", "5M"];
+
+  await runFfmpeg({
+    jobId,
+    args: [
+      "-y",
+      "-loop", "1",
+      "-t", "1",
+      "-i", inputPath,
+      ...codecArgs,
+      "-r", "30",
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      outputPath,
+    ],
+  });
+}
+
 function computePlaylistDurationSec(snapshot: ProjectSnapshot): number {
   const timings = computeTrackTimings(snapshot.tracks, snapshot.renderConfig.transition);
   const lastTiming = timings[timings.length - 1];
@@ -248,7 +371,9 @@ function computePlaylistDurationSec(snapshot: ProjectSnapshot): number {
   return lastTiming && lastTrack ? lastTiming.startSec + lastTrack.durationSec : 0;
 }
 
-function buildBgFilter(bg: ProjectSnapshot["background"]): string {
+function buildBgFilter(bg: ProjectSnapshot["background"], sourcePreprocessed = false): string {
+  if (sourcePreprocessed) return "[0:v]copy[_bgproc]";
+
   const fit = bg?.fit ?? "cover";
   const dim = bg?.dim ?? 0;
   const blur = bg?.blur ?? 0;
@@ -285,9 +410,10 @@ function buildBgFilter(bg: ProjectSnapshot["background"]): string {
 function buildFilterScript(
   bg: ProjectSnapshot["background"],
   overlayFilters: string[],
-  finalLabel = "vout"
+  finalLabel = "vout",
+  sourcePreprocessed = false
 ): string {
-  const bgFilter = buildBgFilter(bg);
+  const bgFilter = buildBgFilter(bg, sourcePreprocessed);
 
   if (overlayFilters.length === 0) {
     return `${bgFilter};\n[_bgproc]copy[${finalLabel}]`;

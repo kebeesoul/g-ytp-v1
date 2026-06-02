@@ -86,9 +86,11 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     await mkdir(workDir, { recursive: true });
 
     if (!snapshot.background) throw new Error("background is required");
-    const bgLocalPath = resolveStoragePath(snapshot.background.storagePath);
+    const bgStoragePath =
+      snapshot.background.processedStoragePath ?? snapshot.background.storagePath;
+    const bgLocalPath = resolveStoragePath(bgStoragePath);
     if (!fileExists(bgLocalPath)) {
-      throw new Error(`input file not found: ${snapshot.background.storagePath}`);
+      throw new Error(`input file not found: ${bgStoragePath}`);
     }
 
     // A: Resolve local input files + prepare PNG cards in parallel.
@@ -147,6 +149,7 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       jobId,
       bgLocalPath,
       bgKind: snapshot.background.kind,
+      bgPreprocessed: !!snapshot.background.processedStoragePath,
       audioLocalPath: concatM4aPath,
       outputPath,
       snapshot,
@@ -279,7 +282,9 @@ async function copyImportIfNeeded(
   );
   const bgNeedsCopy =
     snapshot.background &&
-    !snapshot.background.storagePath.startsWith(prefix);
+    (!snapshot.background.storagePath.startsWith(prefix) ||
+      (!!snapshot.background.processedStoragePath &&
+        !snapshot.background.processedStoragePath.startsWith(prefix)));
 
   if (!trackNeedsCopy && !bgNeedsCopy) return snapshot;
 
@@ -312,17 +317,34 @@ async function copyImportIfNeeded(
 
   let updatedBg: Background | null = snapshot.background;
   const bgJob =
-    updatedBg && !updatedBg.storagePath.startsWith(prefix)
+    updatedBg && (
+      !updatedBg.storagePath.startsWith(prefix) ||
+      (!!updatedBg.processedStoragePath && !updatedBg.processedStoragePath.startsWith(prefix))
+    )
       ? (async () => {
           const bg = updatedBg!;
-          const filename = basename(bg.storagePath);
-          const newPath = `${prefix}${filename}`;
-          const src = resolveStoragePath(bg.storagePath);
-          const dest = workspacePaths.importFile(exportId, filename);
-          assertInsideWorkspace(src);
-          assertInsideWorkspace(dest);
-          await copyFile(src, dest);
-          updatedBg = { ...bg, storagePath: newPath };
+          let nextBg = bg;
+          if (!bg.storagePath.startsWith(prefix)) {
+            const filename = basename(bg.storagePath);
+            const newPath = `${prefix}${filename}`;
+            const src = resolveStoragePath(bg.storagePath);
+            const dest = workspacePaths.importFile(exportId, filename);
+            assertInsideWorkspace(src);
+            assertInsideWorkspace(dest);
+            await copyFile(src, dest);
+            nextBg = { ...nextBg, storagePath: newPath };
+          }
+          if (bg.processedStoragePath && !bg.processedStoragePath.startsWith(prefix)) {
+            const filename = basename(bg.processedStoragePath);
+            const newPath = `${prefix}${filename}`;
+            const src = resolveStoragePath(bg.processedStoragePath);
+            const dest = workspacePaths.importFile(exportId, filename);
+            assertInsideWorkspace(src);
+            assertInsideWorkspace(dest);
+            await copyFile(src, dest);
+            nextBg = { ...nextBg, processedStoragePath: newPath };
+          }
+          updatedBg = nextBg;
         })()
       : Promise.resolve();
 

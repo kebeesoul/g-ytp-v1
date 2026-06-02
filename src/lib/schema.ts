@@ -16,6 +16,7 @@ export type Track = z.infer<typeof TrackSchema>;
 export const BackgroundSchema = z.object({
   kind: z.enum(["image", "video"]),
   storagePath: z.string(),
+  processedStoragePath: z.string().optional(),
   durationSec: z.number().optional(),
   fit: z.enum(["cover", "contain", "blurred_contain"]).default("cover"),
   dim: z.number().min(0).max(1).default(0),
@@ -132,7 +133,7 @@ export const RenderConfigSchema = z.object({
   waveform: WaveformConfigSchema.default({ style: "off" }),
   playlistRepeatCount: z.number().int().min(1).max(5).default(1),
   mastering: z.boolean().default(false),
-  audioBitrateKbps: z.literal(384),
+  audioBitrateKbps: z.literal(192),
   resolution: z.tuple([z.literal(1920), z.literal(1080)]),
   hwaccel: z.enum(["videotoolbox", "none"]).default("videotoolbox"),
 });
