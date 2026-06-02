@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { z } from "zod";
 import type { AudioConfig } from "@/lib/schema";
-import { activeProcesses } from "@/lib/render/processRegistry";
+import { registerProcess, unregisterProcess } from "@/lib/render/processRegistry";
 import { runFfmpeg } from "./runFfmpeg";
 
 export interface NormalizeAudioOptions {
@@ -86,7 +86,7 @@ function captureLoudnormStats(
       "-",
     ], { stdio: ["ignore", "ignore", "pipe"] });
 
-    if (jobId) activeProcesses.set(jobId, proc);
+    registerProcess(jobId, proc);
     let stderr = "";
 
     proc.stderr?.on("data", (chunk: Buffer) => {
@@ -94,13 +94,13 @@ function captureLoudnormStats(
     });
 
     proc.on("close", (code) => {
-      if (jobId) activeProcesses.delete(jobId);
+      unregisterProcess(jobId, proc);
       if (code === 0) resolve(stderr);
       else reject(new Error(`FFmpeg loudnorm pass failed with code ${code}:\n${stderr}`));
     });
 
     proc.on("error", (err) => {
-      if (jobId) activeProcesses.delete(jobId);
+      unregisterProcess(jobId, proc);
       reject(err);
     });
   });

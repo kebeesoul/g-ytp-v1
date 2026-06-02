@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { rm } from "node:fs/promises";
 import { supabaseServer } from "@/lib/supabase/server";
-import { activeProcesses, cancelledJobs } from "@/lib/render/processRegistry";
+import { cancelledJobs, killJobProcesses } from "@/lib/render/processRegistry";
 import { listStorageFiles, removeFromStorage } from "@/lib/supabase/storage";
 import { getJobWorkDir } from "@/lib/workspace";
 
@@ -38,16 +38,8 @@ export async function POST(_req: Request, { params }: RouteParams): Promise<Resp
   // Signal runRenderPipeline catch block to skip DB error updates
   cancelledJobs.add(jobId);
 
-  // Kill FFmpeg process
-  const proc = activeProcesses.get(jobId);
-  if (proc) {
-    proc.kill("SIGTERM");
-    const sigkillTimer = setTimeout(() => {
-      if (!proc.killed) proc.kill("SIGKILL");
-    }, 2000);
-    // Clear timer if process exits before the 2s window
-    proc.once("exit", () => clearTimeout(sigkillTimer));
-  }
+  // Kill all active FFmpeg/Python worker processes for this job.
+  killJobProcesses(jobId);
 
   // DB cleanup: delink job first to release FK, then delete both records
   const { error: delinkError } = await supabaseServer

@@ -7,7 +7,13 @@ import { PresetEditor, PresetPreview } from "@/components/settings/PresetEditor"
 
 export default function SettingsPage() {
   const [presets, setPresets] = useState<(OverlayPreset | null)[]>(Array(6).fill(null));
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    const slot = new URLSearchParams(window.location.search).get("slot");
+    if (!slot) return 0;
+    const n = parseInt(slot, 10) - 1;
+    return n >= 0 && n < 6 ? n : 0;
+  });
   const [liveDraft, setLiveDraft] = useState<OverlayPreset | null>(null);
   const positionSyncRef = useRef<((x: number, y: number) => void) | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,17 +44,7 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    loadPresets();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Pre-select slot from URL param (?slot=N)
-  useEffect(() => {
-    const slot = new URLSearchParams(window.location.search).get("slot");
-    if (slot) {
-      const n = parseInt(slot, 10) - 1;
-      if (n >= 0 && n < 6) setSelectedIndex(n);
-    }
+    queueMicrotask(loadPresets);
   }, []);
 
   function handleSaved(preset: OverlayPreset) {

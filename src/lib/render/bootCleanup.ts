@@ -36,5 +36,4 @@ async function runBootCleanup(): Promise<void> {
     .in("id", projectIds)
     .eq("status", "rendering");
 
-  console.log(`[startup] cleaned up ${zombies.length} zombie jobs`);
 }

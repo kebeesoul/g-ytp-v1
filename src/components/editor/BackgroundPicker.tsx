@@ -49,7 +49,7 @@ export function BackgroundPicker({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !value) {
-      setImgNaturalSize(null);
+      queueMicrotask(() => setImgNaturalSize(null));
       // Clear canvas when image is removed
       const ctx = canvas?.getContext("2d");
       if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -73,7 +73,7 @@ export function BackgroundPicker({
       };
       img.src = publicUrl;
     } else {
-      setImgNaturalSize(null);
+      queueMicrotask(() => setImgNaturalSize(null));
       // 비디오 — 첫 프레임 캡처 (crop position not applied to video preview)
       const video = document.createElement("video");
       video.crossOrigin = "anonymous";

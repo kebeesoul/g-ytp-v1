@@ -26,6 +26,5 @@ export async function cleanOrphanedTmpDirs(): Promise<void> {
     const dir = path.join(tmpRoot, jobId);
     assertInsideWorkspace(dir);
     await fs.promises.rm(dir, { recursive: true, force: true });
-    console.log(`[diskPolicy] cleaned orphaned tmp: ${jobId}`);
   }
 }

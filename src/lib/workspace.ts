@@ -51,6 +51,12 @@ export const workspacePaths = {
 
   selectedThumbnail: (filename: string) =>
     path.join(WORKSPACE_ROOT, "thumbnail", "selected", filename),
+
+  masteredCacheDir: () =>
+    path.join(WORKSPACE_ROOT, "mastered-cache"),
+
+  masteredCacheFile: (cacheKey: string) =>
+    path.join(WORKSPACE_ROOT, "mastered-cache", `${cacheKey}.wav`),
 };
 
 export function resolveStoragePath(relativePath: string): string {

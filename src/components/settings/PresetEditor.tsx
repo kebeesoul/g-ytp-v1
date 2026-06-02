@@ -29,16 +29,17 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
   // Sync draft/name when slot changes or preset is updated from outside (e.g. after save)
   useEffect(() => {
     const d = preset ?? defaultDraft(slotId);
-    setDraft(d);
-    setName(preset?.animation.animMemo ?? "");
-    setError(null);
-    onDraftChange?.(d);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slotId, preset]);
+    queueMicrotask(() => {
+      setDraft(d);
+      setName(preset?.animation.animMemo ?? "");
+      setError(null);
+      onDraftChange?.(d);
+    });
+  }, [slotId, preset, onDraftChange]);
 
   // Reset saved indicator only when navigating to a different slot
   useEffect(() => {
-    setSaved(false);
+    queueMicrotask(() => setSaved(false));
   }, [slotId]);
 
   // Load Google Fonts for the preview

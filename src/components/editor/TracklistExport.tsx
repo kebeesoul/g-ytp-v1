@@ -15,8 +15,11 @@ export function TracklistExport({ snapshot }: TracklistExportProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
-    setTracklist(null);
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setError(null);
+      setTracklist(null);
+    });
 
     (async () => {
       try {

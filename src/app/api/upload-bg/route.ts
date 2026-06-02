@@ -19,6 +19,10 @@ const VIDEO_MIMES = new Set([
   "video/x-matroska",
   "video/webm",
 ]);
+const KIND_EXTENSIONS = {
+  image: new Set(["jpg", "jpeg", "png", "webp", "gif"]),
+  video: new Set(["mp4", "mov", "mkv", "webm"]),
+} as const;
 
 function detectKind(mimeType: string): "image" | "video" | null {
   if (IMAGE_MIMES.has(mimeType)) return "image";
@@ -51,7 +55,10 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const ext = file.name.split(".").pop() ?? (kind === "image" ? "jpg" : "mp4");
+  const rawExt = file.name.split(".").pop()?.toLowerCase();
+  const ext = rawExt && KIND_EXTENSIONS[kind].has(rawExt)
+    ? rawExt
+    : kind === "image" ? "jpg" : "mp4";
   const storagePath = `import/${sessionId.data}/bg.${ext}`;
   const previousStoragePath = z.string().optional().safeParse(
     formData.get("previousStoragePath") || undefined

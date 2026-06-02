@@ -91,31 +91,31 @@ describe("Layer E — Process Registry (activeProcesses Map)", () => {
   });
 
   it("Map에 process 등록/조회/삭제가 정상 동작한다", async () => {
-    const { activeProcesses } = await import("@/lib/render/processRegistry");
+    const { activeProcesses, registerProcess, unregisterProcess } = await import("@/lib/render/processRegistry");
     const fakeProc = { pid: 12345, kill: vi.fn() } as unknown as import("node:child_process").ChildProcess;
 
-    activeProcesses.set("job-1", fakeProc);
+    registerProcess("job-1", fakeProc);
     expect(activeProcesses.has("job-1")).toBe(true);
-    expect(activeProcesses.get("job-1")).toBe(fakeProc);
+    expect(activeProcesses.get("job-1")?.has(fakeProc)).toBe(true);
 
-    activeProcesses.delete("job-1");
+    unregisterProcess("job-1", fakeProc);
     expect(activeProcesses.has("job-1")).toBe(false);
   });
 
   it("여러 jobId를 독립적으로 관리한다", async () => {
-    const { activeProcesses } = await import("@/lib/render/processRegistry");
+    const { activeProcesses, registerProcess, unregisterProcess } = await import("@/lib/render/processRegistry");
     const proc1 = { pid: 1001 } as unknown as import("node:child_process").ChildProcess;
     const proc2 = { pid: 1002 } as unknown as import("node:child_process").ChildProcess;
 
-    activeProcesses.set("job-a", proc1);
-    activeProcesses.set("job-b", proc2);
+    registerProcess("job-a", proc1);
+    registerProcess("job-b", proc2);
 
-    expect(activeProcesses.get("job-a")).toBe(proc1);
-    expect(activeProcesses.get("job-b")).toBe(proc2);
+    expect(activeProcesses.get("job-a")?.has(proc1)).toBe(true);
+    expect(activeProcesses.get("job-b")?.has(proc2)).toBe(true);
     expect(activeProcesses.size).toBe(2);
 
-    activeProcesses.delete("job-a");
-    activeProcesses.delete("job-b");
+    unregisterProcess("job-a", proc1);
+    unregisterProcess("job-b", proc2);
     expect(activeProcesses.size).toBe(0);
   });
 

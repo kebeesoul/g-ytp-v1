@@ -67,8 +67,8 @@ export function useRenderJob(): UseRenderJobResult {
     if (!raw) return;
     try {
       const parsed = ActiveRenderSchema.parse(JSON.parse(raw));
-      setJobId(parsed.jobId);
-      void fetchStatus(parsed.jobId);
+      queueMicrotask(() => setJobId(parsed.jobId));
+      queueMicrotask(() => void fetchStatus(parsed.jobId));
     } catch {
       localStorage.removeItem(LS_KEY);
     }

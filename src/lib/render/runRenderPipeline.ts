@@ -214,11 +214,9 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
       .eq("id", exportId);
 
     updateJobQueue(jobId, exportId, "done", 1, null, null, outputPath, completedAt);
-    console.log(`[render] ${jobId} done`);
   } catch (err) {
     // Cancel endpoint already wiped DB + storage — skip error updates
     if (cancelledJobs.has(jobId)) {
-      console.log(`[render] ${jobId} cancelled by user`);
       return;
     }
 

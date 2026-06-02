@@ -8,11 +8,12 @@ export function registerShutdownHandler(): void {
   registered = true;
 
   const handler = async () => {
-    console.log("[shutdown] killing active FFmpeg processes...");
-    for (const [jobId, proc] of activeProcesses) {
-      try {
-        proc.kill("SIGTERM");
-      } catch {}
+    for (const [jobId, processes] of activeProcesses) {
+      for (const proc of processes) {
+        try {
+          proc.kill("SIGTERM");
+        } catch {}
+      }
       await supabaseServer
         .from("render_jobs")
         .update({
