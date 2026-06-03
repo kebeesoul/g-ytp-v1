@@ -12,6 +12,9 @@ import {
 import { parseFFmpegProgress, computeEtaSec } from "./parseProgress";
 import { runFfmpeg } from "./runFfmpeg";
 
+const SEGMENT_KEYFRAME_SEC = 0.5;
+const SEGMENT_KEYFRAME_FRAMES = 15;
+
 export interface RenderVideoOptions {
   jobId: string;
   bgLocalPath: string;
@@ -356,6 +359,8 @@ async function renderPngOverlaySegmentCopyPath(options: {
         outputPath: segmentPath,
         startSec: segment.startSec,
         durationSec: segment.endSec - segment.startSec,
+        overlayStartSec: segment.overlayStartSec,
+        overlayEndSec: segment.overlayEndSec,
         useVideotoolbox: options.useVideotoolbox,
         snapshot: options.snapshot,
       });
@@ -521,7 +526,7 @@ async function createStaticImageLoopClip(
   useVideotoolbox: boolean,
   waveformStyle: ProjectSnapshot["renderConfig"]["waveform"]["style"] = "off"
 ): Promise<void> {
-  const codecArgs = buildVideoCodecArgs(useVideotoolbox);
+  const codecArgs = buildVideoCodecArgs(useVideotoolbox, SEGMENT_KEYFRAME_FRAMES);
   const hasWaveform = waveformStyle !== "off";
   const waveFile = hasWaveform
     ? join(process.cwd(), "public", "waveforms", `${waveformStyle}.mov`)
@@ -551,7 +556,13 @@ async function createStaticImageLoopClip(
 }
 
 type OverlaySegment =
-  | { startSec: number; endSec: number; card: PngCardSpec }
+  | {
+      startSec: number;
+      endSec: number;
+      card: PngCardSpec;
+      overlayStartSec: number;
+      overlayEndSec: number;
+    }
   | { startSec: number; endSec: number; card: null };
 
 function buildOverlaySegments(specs: PngCardSpec[], totalDurationSec: number): OverlaySegment[] {
@@ -560,15 +571,25 @@ function buildOverlaySegments(specs: PngCardSpec[], totalDurationSec: number): O
   let cursor = 0;
 
   for (const spec of sorted) {
-    const startSec = Math.max(0, spec.tStart);
-    const endSec = Math.min(totalDurationSec, spec.tEnd);
+    const overlayStartSec = Math.max(0, spec.tStart);
+    const overlayEndSec = Math.min(totalDurationSec, spec.tEnd);
+    const startSec = Math.max(0, snapDownToSegmentKeyframe(overlayStartSec));
+    const endSec = Math.min(totalDurationSec, snapUpToSegmentKeyframe(overlayEndSec));
     if (endSec <= startSec) continue;
 
+    const segmentStartSec = Math.max(startSec, cursor);
+    if (endSec <= segmentStartSec) continue;
     if (startSec > cursor) {
       segments.push({ startSec: cursor, endSec: startSec, card: null });
     }
 
-    segments.push({ startSec, endSec, card: spec });
+    segments.push({
+      startSec: segmentStartSec,
+      endSec,
+      card: spec,
+      overlayStartSec,
+      overlayEndSec,
+    });
     cursor = Math.max(cursor, endSec);
   }
 
@@ -577,6 +598,14 @@ function buildOverlaySegments(specs: PngCardSpec[], totalDurationSec: number): O
   }
 
   return segments.filter((segment) => segment.endSec - segment.startSec > 0.01);
+}
+
+function snapDownToSegmentKeyframe(sec: number): number {
+  return Math.floor(sec / SEGMENT_KEYFRAME_SEC) * SEGMENT_KEYFRAME_SEC;
+}
+
+function snapUpToSegmentKeyframe(sec: number): number {
+  return Math.ceil(sec / SEGMENT_KEYFRAME_SEC) * SEGMENT_KEYFRAME_SEC;
 }
 
 async function copyVideoSegment(options: {
@@ -607,6 +636,8 @@ async function renderOverlaySegment(options: {
   outputPath: string;
   startSec: number;
   durationSec: number;
+  overlayStartSec: number;
+  overlayEndSec: number;
   useVideotoolbox: boolean;
   snapshot: ProjectSnapshot;
 }): Promise<void> {
@@ -616,8 +647,8 @@ async function renderOverlaySegment(options: {
   );
   const localSpec: PngCardSpec = {
     ...options.card,
-    tStart: 0,
-    tEnd: options.durationSec,
+    tStart: options.overlayStartSec - options.startSec,
+    tEnd: options.overlayEndSec - options.startSec,
   };
   const overlayLines = buildPngCardOverlayLines([localSpec], 1, preset);
   const filterScriptPath = options.outputPath.replace(/\.mp4$/, ".txt");
@@ -648,7 +679,10 @@ async function renderOverlaySegment(options: {
   });
 }
 
-function buildVideoCodecArgs(useVideotoolbox: boolean): string[] {
+function buildVideoCodecArgs(
+  useVideotoolbox: boolean,
+  keyframeIntervalFrames = 60
+): string[] {
   const colorArgs = [
     "-colorspace", "bt709",
     "-color_primaries", "bt709",
@@ -663,7 +697,7 @@ function buildVideoCodecArgs(useVideotoolbox: boolean): string[] {
         "-bufsize", "14M",
         "-profile:v", "high",
         "-level:v", "4.1",
-        "-g", "60",
+        "-g", String(keyframeIntervalFrames),
         "-r", "30",
         ...colorArgs,
       ]
@@ -674,8 +708,8 @@ function buildVideoCodecArgs(useVideotoolbox: boolean): string[] {
         "-b:v", "5M",
         "-maxrate", "7M",
         "-bufsize", "14M",
-        "-g", "60",
-        "-keyint_min", "15",
+        "-g", String(keyframeIntervalFrames),
+        "-keyint_min", String(keyframeIntervalFrames),
         "-r", "30",
         ...colorArgs,
       ];

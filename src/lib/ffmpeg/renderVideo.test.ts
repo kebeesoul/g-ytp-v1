@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProjectSnapshot } from "@/lib/schema";
@@ -154,6 +154,46 @@ describe("renderVideo", () => {
     expect(calls.some((args) => args.includes("-filter_complex_script"))).toBe(true);
     expect(calls.at(-1)).toContain("-f concat");
     expect(calls.at(-1)).toContain("segments.txt");
+  });
+
+  it("expands overlay segments to the keyframe grid while preserving exact overlay timing", async () => {
+    const workDir = await mkdtemp(join(tmpdir(), "gytp-render-test-"));
+    const snapshot: ProjectSnapshot = {
+      ...baseSnapshot,
+      renderConfig: {
+        ...baseSnapshot.renderConfig,
+        overlay: { displayMode: "5", presetId: "default", presetVersion: 1 },
+      },
+    };
+    const card: PngCardSpec = {
+      localPath: join(workDir, "card_0_0.png"),
+      track: snapshot.tracks[0],
+      tStart: 1.2,
+      tEnd: 6.3,
+      fadeOut: true,
+    };
+
+    await renderVideo({
+      jobId: "job",
+      bgLocalPath: "/tmp/bg_processed.jpg",
+      bgKind: "image",
+      bgPreprocessed: true,
+      audioLocalPath: "/tmp/concat.m4a",
+      outputPath: join(workDir, "final.mp4"),
+      snapshot,
+      workDir,
+      startTimeMs: Date.now(),
+      pngCardSpecs: [card],
+    });
+
+    const calls = vi.mocked(runFfmpeg).mock.calls.map((call) => call[0].args);
+    const overlayArgs = calls.find((args) => args.includes("-filter_complex_script"));
+    expect(overlayArgs).toContain("1.000");
+    expect(overlayArgs).toContain("5.500");
+
+    const filterScript = await readFile(join(workDir, "segment_0001.txt"), "utf8");
+    expect(filterScript).toContain("st=0.200");
+    expect(filterScript).toContain("lt(t\\,5.300)");
   });
 
   it("repeats a completed render with stream-copy concat", async () => {
