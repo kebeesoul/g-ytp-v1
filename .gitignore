@@ -47,7 +47,11 @@ next-env.d.ts
 /workspace/import/
 /workspace/export/
 /workspace/thumbnail/
+/workspace/mastered-cache/
 !/workspace/.gitkeep
+
+# package manager lock (pnpm project — npm lock not needed)
+package-lock.json
 .gstack/
 
 # local generated artifacts
