@@ -691,12 +691,11 @@ function buildVideoCodecArgs(
 
   return useVideotoolbox
     ? [
-        "-c:v", "h264_videotoolbox",
-        "-b:v", "5M",
-        "-maxrate", "7M",
-        "-bufsize", "14M",
-        "-profile:v", "high",
-        "-level:v", "4.1",
+        "-c:v", "hevc_videotoolbox",
+        "-b:v", "4M",
+        "-maxrate", "6M",
+        "-bufsize", "12M",
+        "-tag:v", "hvc1",
         "-g", String(keyframeIntervalFrames),
         "-r", "30",
         ...colorArgs,

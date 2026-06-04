@@ -360,10 +360,9 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   }
 
   function handleClearAll() {
-    setShowClearConfirm(false);
     window.localStorage.removeItem(EDITOR_DRAFT_KEY);
     window.localStorage.removeItem(SELECTED_THUMBNAIL_KEY);
-    router.push("/editor");
+    window.location.href = "/editor";
   }
 
   function parseHashtagInput(value: string): string[] {

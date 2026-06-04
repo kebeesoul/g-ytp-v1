@@ -87,7 +87,7 @@ export async function POST(req: Request): Promise<Response> {
     durationSec = probe.durationSec;
   }
 
-  const processed = await preprocessBackground(dest, kind, 0.25, importDir);
+  const processed = await preprocessBackground(dest, kind, 0, importDir);
   const processedExt = kind === "image" ? "jpg" : "mp4";
   const processedStoragePath = `import/${sessionId.data}/bg_processed.${processedExt}`;
   durationSec = processed.durationSec ?? durationSec;
