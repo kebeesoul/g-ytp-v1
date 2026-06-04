@@ -360,6 +360,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   }
 
   function handleClearAll() {
+    setShowClearConfirm(false);
     window.localStorage.removeItem(EDITOR_DRAFT_KEY);
     window.localStorage.removeItem(SELECTED_THUMBNAIL_KEY);
     router.push("/editor");
@@ -429,6 +430,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   }
 
   return (
+    <>
     <div className="vm-shell">
       <aside className="vm-rail flex h-[calc(100vh-58px)] flex-col gap-5 overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pr-1 [overflow-anchor:none]">
@@ -490,30 +492,6 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
           </button>
         </div>
       </aside>
-
-      {/* Clear 확인 팝업 */}
-      {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="flex flex-col gap-4 rounded border border-[var(--vm-border)] bg-[#0d0d0d] p-5 shadow-xl">
-            <p className="text-sm text-[var(--vm-text)]">플레이리스트를 초기화할까요?</p>
-            <p className="text-[11px] text-[var(--vm-subtle)]">현재 작업이 모두 삭제됩니다.</p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowClearConfirm(false)}
-                className="vm-button-secondary px-4 py-1.5 text-xs"
-              >
-                No
-              </button>
-              <button
-                onClick={handleClearAll}
-                className="border border-[#5a2a2a] bg-[#1e0a0a] px-4 py-1.5 text-xs text-[var(--vm-error)] hover:bg-[#2a0f0f]"
-              >
-                Yes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <section className="vm-main">
         {ffmpegWarning && (
@@ -642,5 +620,30 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
         </div>
       </section>
     </div>
+
+      {/* Clear 확인 팝업 */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="flex flex-col gap-4 rounded border border-[var(--vm-border)] bg-[#0d0d0d] p-5 shadow-xl">
+            <p className="text-sm text-[var(--vm-text)]">플레이리스트를 초기화할까요?</p>
+            <p className="text-[11px] text-[var(--vm-subtle)]">현재 작업이 모두 삭제됩니다.</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="vm-button-secondary px-4 py-1.5 text-xs"
+              >
+                No
+              </button>
+              <button
+                onClick={handleClearAll}
+                className="border border-[#5a2a2a] bg-[#1e0a0a] px-4 py-1.5 text-xs text-[var(--vm-error)] hover:bg-[#2a0f0f]"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
