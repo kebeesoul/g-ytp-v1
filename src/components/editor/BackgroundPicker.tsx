@@ -250,10 +250,23 @@ function WaveformMock({
 
 function OverlayMock({ preset, scale }: { preset: OverlayPreset; scale: number }) {
   const { layout, typography, color } = preset;
-  // y is the title's top; artist sits above by artistFontSize + lineHeight (row gap)
-  const yAbsolute = layout.y < 0 ? 1080 + layout.y : layout.y;
   const rowGapPx = typography.lineHeight * scale;
-  const artistOffsetPx = (typography.artistFontSize + typography.lineHeight) * scale;
+  const anchor = layout.anchor ?? "bottom-left";
+  const xPx = layout.x * scale;
+  const yPx = layout.y * scale; // negative y = distance from bottom edge
+
+  // Use correct CSS edge per anchor so text stays inside the preview
+  let posStyle: React.CSSProperties;
+  // top anchors: y > 0 = distance from top edge
+  // bottom anchors: y > 0 = distance above bottom edge (positive = inside canvas)
+  // right anchors: x < 0 = distance from right edge (e.g. x=-96 → right: 96px)
+  if (anchor === "top-left")           posStyle = { left: xPx, top: yPx };
+  else if (anchor === "top-center")    posStyle = { left: `calc(50% + ${xPx}px)`, top: yPx, transform: "translateX(-50%)" };
+  else if (anchor === "top-right")     posStyle = { right: -xPx, top: yPx };
+  else if (anchor === "bottom-left")   posStyle = { left: xPx, bottom: yPx };
+  else if (anchor === "bottom-center") posStyle = { left: `calc(50% + ${xPx}px)`, bottom: yPx, transform: "translateX(-50%)" };
+  else if (anchor === "bottom-right")  posStyle = { right: -xPx, bottom: yPx };
+  else /* center */                    posStyle = { left: `calc(50% + ${xPx}px)`, top: `calc(50% + ${yPx}px)`, transform: "translate(-50%, -50%)" };
 
   const artistFont = FONTS.find((f) => f.name === typography.artistFontFamily);
   const titleFont = FONTS.find((f) => f.name === typography.titleFontFamily);
@@ -266,8 +279,7 @@ function OverlayMock({ preset, scale }: { preset: OverlayPreset; scale: number }
       <div
         style={{
           position: "absolute",
-          left: layout.x * scale,
-          top: Math.max(0, yAbsolute * scale - artistOffsetPx),
+          ...posStyle,
         }}
       >
         <div

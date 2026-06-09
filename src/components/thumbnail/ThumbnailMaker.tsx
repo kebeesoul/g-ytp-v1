@@ -27,6 +27,7 @@ interface ThumbnailMakerProps {
 }
 
 const SELECTED_THUMBNAIL_KEY = "gytp:selected-thumbnail-background";
+const SELECTED_PHOTO_BG_KEY = "gytp:selected-photo-background";
 
 function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -117,7 +118,15 @@ export function ThumbnailMaker({ initialPresets }: ThumbnailMakerProps) {
       const parsed = BackgroundSchema.safeParse(raw);
       if (!parsed.success) throw new Error("서버 응답 형식 오류");
 
+      // Save thumbnail (canvas with text overlay) — used as reference only
       window.localStorage.setItem(SELECTED_THUMBNAIL_KEY, JSON.stringify(parsed.data));
+
+      // Save original photo (no text) as video background for editor
+      if (localPath) {
+        const photoBg = BackgroundSchema.parse({ kind: "image", storagePath: localPath });
+        window.localStorage.setItem(SELECTED_PHOTO_BG_KEY, JSON.stringify(photoBg));
+      }
+
       router.push("/editor?selectedThumbnail=1");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Select failed");

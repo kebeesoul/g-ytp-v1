@@ -21,6 +21,7 @@ import { TrackList } from "@/components/editor/TrackList";
 import { AudioPlayer } from "@/components/editor/AudioPlayer";
 import { BackgroundPicker } from "@/components/editor/BackgroundPicker";
 import { OverlayPresetSlots } from "@/components/editor/OverlayPresetSlots";
+import { OverlayQuickEditor } from "@/components/editor/OverlayQuickEditor";
 import { RenderPanel } from "@/components/editor/RenderPanel";
 import { TracklistExport } from "@/components/editor/TracklistExport";
 import { FIXED_MASTERING_AUDIO_CONFIG } from "@/lib/mastering/constants";
@@ -44,6 +45,7 @@ const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
 };
 
 const SELECTED_THUMBNAIL_KEY = "gytp:selected-thumbnail-background";
+const SELECTED_PHOTO_BG_KEY = "gytp:selected-photo-background";
 const EDITOR_DRAFT_KEY = "gytp:editor-draft";
 
 type EditorDraft = {
@@ -110,6 +112,15 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [background, setBackground] = useState<Background | null>(() => {
     if (fromId || typeof window === "undefined") return null;
     if (selectedThumbnail) {
+      // Prefer original photo (no text overlay) for video background
+      const photoRaw = window.localStorage.getItem(SELECTED_PHOTO_BG_KEY);
+      if (photoRaw) {
+        try {
+          const parsed = BackgroundSchema.safeParse(JSON.parse(photoRaw));
+          if (parsed.success) return parsed.data;
+        } catch {}
+      }
+      // Fall back to thumbnail canvas if photo not available
       const raw = window.localStorage.getItem(SELECTED_THUMBNAIL_KEY);
       if (raw) {
         try {
@@ -159,6 +170,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
     return readEditorDraft()?.overlayPresetId ?? "default";
   });
   const [presets, setPresets] = useState<(OverlayPreset | null)[]>(Array(6).fill(null));
+
+  const [liveOverlayDraft, setLiveOverlayDraft] = useState<OverlayPreset | null>(null);
 
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
   const [activeStoragePath, setActiveStoragePath] = useState<string | null>(null);
@@ -276,6 +289,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   useEffect(() => {
     if (!fromId && selectedThumbnail) {
       window.localStorage.removeItem(SELECTED_THUMBNAIL_KEY);
+      window.localStorage.removeItem(SELECTED_PHOTO_BG_KEY);
     }
   }, [fromId, selectedThumbnail]);
 
@@ -362,7 +376,17 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   function handleClearAll() {
     window.localStorage.removeItem(EDITOR_DRAFT_KEY);
     window.localStorage.removeItem(SELECTED_THUMBNAIL_KEY);
+    window.localStorage.removeItem(SELECTED_PHOTO_BG_KEY);
     window.location.href = "/editor";
+  }
+
+  function handlePresetSaved(preset: OverlayPreset) {
+    setPresets((prev) => {
+      const next = [...prev];
+      const match = /^slot-(\d)$/.exec(preset.id);
+      if (match) next[parseInt(match[1], 10) - 1] = preset;
+      return next;
+    });
   }
 
   function parseHashtagInput(value: string): string[] {
@@ -509,7 +533,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
               editorSessionId={editorSessionId}
               value={background}
               onChange={setBackground}
-              overlayPreview={presets.find((p) => p?.id === overlayPresetId) ?? null}
+              overlayPreview={liveOverlayDraft ?? presets.find((p) => p?.id === overlayPresetId) ?? null}
               waveformStyle={waveformStyle}
             />
 
@@ -517,6 +541,13 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
               presets={presets}
               selectedId={overlayPresetId}
               onChange={setOverlayPresetId}
+            />
+
+            <OverlayQuickEditor
+              preset={presets.find((p) => p?.id === overlayPresetId) ?? null}
+              slotId={overlayPresetId}
+              onSaved={handlePresetSaved}
+              onDraftChange={setLiveOverlayDraft}
             />
 
             <div className="vm-panel vm-panel-pad flex flex-col gap-3">
