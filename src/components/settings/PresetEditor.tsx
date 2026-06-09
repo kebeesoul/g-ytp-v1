@@ -385,14 +385,28 @@ export function PresetPreview({
   draft: OverlayPreset;
   onPositionChange?: (x: number, y: number) => void;
 }) {
-  // y is the title's top position; artist sits above by artistFontSize + lineHeight (row gap)
-  const yAbsolute = draft.layout.y < 0 ? 1080 + draft.layout.y : draft.layout.y;
+  const { anchor, x, y } = draft.layout;
+  const xPx = x * PREVIEW_SCALE;
+  const yPx = y * PREVIEW_SCALE;
   const rowGapPx = draft.typography.lineHeight * PREVIEW_SCALE;
-  const artistOffsetPx = (draft.typography.artistFontSize + draft.typography.lineHeight) * PREVIEW_SCALE;
 
-  const xPx = Math.max(0, draft.layout.x * PREVIEW_SCALE);
-  const yTitlePx = yAbsolute * PREVIEW_SCALE;
-  const yArtistPx = Math.max(0, yTitlePx - artistOffsetPx);
+  // Anchor-aware positioning — mirrors OverlayMock in BackgroundPicker
+  let posStyle: React.CSSProperties;
+  if (anchor === "top-left") {
+    posStyle = { left: xPx, top: yPx };
+  } else if (anchor === "top-center") {
+    posStyle = { left: `calc(50% + ${xPx}px)`, top: yPx, transform: "translateX(-50%)" };
+  } else if (anchor === "top-right") {
+    posStyle = { right: -xPx, top: yPx };
+  } else if (anchor === "bottom-left") {
+    posStyle = { left: xPx, bottom: yPx };
+  } else if (anchor === "bottom-center") {
+    posStyle = { left: `calc(50% + ${xPx}px)`, bottom: yPx, transform: "translateX(-50%)" };
+  } else if (anchor === "bottom-right") {
+    posStyle = { right: -xPx, bottom: yPx };
+  } else {
+    posStyle = { left: `calc(50% + ${xPx}px)`, top: `calc(50% + ${yPx}px)`, transform: "translate(-50%, -50%)" };
+  }
 
   const artistFont = FONTS.find((f) => f.name === draft.typography.artistFontFamily);
   const titleFont = FONTS.find((f) => f.name === draft.typography.titleFontFamily);
@@ -441,10 +455,9 @@ export function PresetPreview({
       <div
         style={{
           position: "absolute",
-          left: xPx,
-          top: Math.max(0, yArtistPx),
           cursor: onPositionChange ? "move" : "default",
           userSelect: "none",
+          ...posStyle,
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
