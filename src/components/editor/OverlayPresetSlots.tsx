@@ -9,9 +9,15 @@ interface OverlayPresetSlotsProps {
   presets: (OverlayPreset | null)[];   // length 6, null = empty slot
   selectedId: string;
   onChange: (presetId: string) => void;
+  disabled?: boolean;
 }
 
-export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPresetSlotsProps) {
+export function OverlayPresetSlots({
+  presets,
+  selectedId,
+  onChange,
+  disabled = false,
+}: OverlayPresetSlotsProps) {
   const router = useRouter();
 
   return (
@@ -50,8 +56,9 @@ export function OverlayPresetSlots({ presets, selectedId, onChange }: OverlayPre
               key={slotId}
               onClick={() => onChange(preset.id)}
               onDoubleClick={() => router.push(`/settings?slot=${i + 1}`)}
+              disabled={disabled}
               title="더블클릭으로 편집"
-              className={`flex flex-col items-center gap-1 rounded-md border p-2 text-center transition-colors ${
+              className={`flex flex-col items-center gap-1 rounded-md border p-2 text-center transition-colors disabled:cursor-wait disabled:opacity-50 ${
                 isSelected
                   ? "border-blue-500 bg-blue-500/10"
                   : "border-gray-700 hover:border-gray-500"

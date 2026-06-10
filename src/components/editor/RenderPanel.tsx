@@ -12,6 +12,7 @@ interface RenderPanelProps {
   onMasteringChange: (v: boolean) => void;
   playlistRepeatCount: number;
   onPlaylistRepeatCountChange: (v: number) => void;
+  disabled?: boolean;
 }
 
 function formatEta(sec: number | null): string {
@@ -28,6 +29,7 @@ export function RenderPanel({
   onMasteringChange,
   playlistRepeatCount,
   onPlaylistRepeatCountChange,
+  disabled = false,
 }: RenderPanelProps) {
   const { jobId, status, submitting, cancelling, error, startRender, cancelRender } = useRenderJob();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -104,7 +106,7 @@ export function RenderPanel({
       <div className="flex flex-col gap-2">
         <button
           onClick={handleExport}
-          disabled={submitting || isRunning || cancelling}
+          disabled={disabled || submitting || isRunning || cancelling}
           className="vm-button-primary w-full disabled:opacity-40"
         >
           RENDERING

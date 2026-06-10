@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
@@ -172,6 +171,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [presets, setPresets] = useState<(OverlayPreset | null)[]>(Array(6).fill(null));
 
   const [liveOverlayDraft, setLiveOverlayDraft] = useState<OverlayPreset | null>(null);
+  const [overlayPresetSaving, setOverlayPresetSaving] = useState(false);
 
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
   const [activeStoragePath, setActiveStoragePath] = useState<string | null>(null);
@@ -183,8 +183,6 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const hydratedRef = useRef(false);
-  const router = useRouter();
-
   // Persist editor state to localStorage on every relevant change (skip when viewing a saved project)
   useEffect(() => {
     if (fromId || typeof window === "undefined") return;
@@ -540,14 +538,20 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             <OverlayPresetSlots
               presets={presets}
               selectedId={overlayPresetId}
-              onChange={setOverlayPresetId}
+              disabled={overlayPresetSaving}
+              onChange={(presetId) => {
+                setLiveOverlayDraft(null);
+                setOverlayPresetId(presetId);
+              }}
             />
 
             <OverlayQuickEditor
+              key={overlayPresetId}
               preset={presets.find((p) => p?.id === overlayPresetId) ?? null}
               slotId={overlayPresetId}
               onSaved={handlePresetSaved}
               onDraftChange={setLiveOverlayDraft}
+              onSavingChange={setOverlayPresetSaving}
             />
 
             <div className="vm-panel vm-panel-pad flex flex-col gap-3">
@@ -645,6 +649,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
               onMasteringChange={setMastering}
               playlistRepeatCount={playlistRepeatCount}
               onPlaylistRepeatCountChange={setPlaylistRepeatCount}
+              disabled={overlayPresetSaving}
             />
           </div>
         </div>

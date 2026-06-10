@@ -1,6 +1,7 @@
 import type { Track, OverlayPreset } from "@/lib/schema";
 import { runFfmpeg } from "./runFfmpeg";
 import { resolveOverlayFontPath } from "./overlayFontResolver";
+import { getDrawtextPosition } from "@/lib/overlayPosition";
 
 const CARD_GEN_CONCURRENCY = 4;
 
@@ -51,15 +52,8 @@ async function generateSinglePng(
   outputPath: string
 ): Promise<void> {
   const { layout, typography, color } = preset;
-  // lineHeight is now a pixel gap between artist and title rows (not a multiplier).
-  const rowGap = typography.lineHeight;
-  const artistOffset = typography.artistFontSize + rowGap;
-
-  // y is the title's top position. Artist sits above it by artistFontSize + gap.
-  const yTitle = layout.y < 0 ? `h${layout.y}` : `${layout.y}`;
-  const yArtist = layout.y < 0
-    ? `h${layout.y - artistOffset}`
-    : `${layout.y - artistOffset}`;
+  const artistPosition = getDrawtextPosition(layout, typography, "artist");
+  const titlePosition = getDrawtextPosition(layout, typography, "title");
 
   const artistFontfile = escapeDrawtext(resolveOverlayFontPath(typography.artistFontFamily));
   const titleFontfile = escapeDrawtext(resolveOverlayFontPath(typography.titleFontFamily));
@@ -67,7 +61,7 @@ async function generateSinglePng(
   const artistFilter =
     `drawtext=fontfile='${artistFontfile}'` +
     `:text='${escapeDrawtext(track.artist)}'` +
-    `:x=${layout.x}:y=${yArtist}` +
+    `:x=${artistPosition.x}:y=${artistPosition.y}` +
     `:fontsize=${typography.artistFontSize}` +
     `:fontcolor=${color.artist}@1.0` +
     `:fix_bounds=1`;
@@ -75,7 +69,7 @@ async function generateSinglePng(
   const titleFilter =
     `drawtext=fontfile='${titleFontfile}'` +
     `:text='${escapeDrawtext(track.title)}'` +
-    `:x=${layout.x}:y=${yTitle}` +
+    `:x=${titlePosition.x}:y=${titlePosition.y}` +
     `:fontsize=${typography.titleFontSize}` +
     `:fontcolor=${color.title}@1.0` +
     `:fix_bounds=1`;

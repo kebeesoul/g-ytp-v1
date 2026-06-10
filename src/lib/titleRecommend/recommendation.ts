@@ -51,12 +51,95 @@ const PLAYLIST_MARKS = [
   "[playlist]",
 ] as const;
 
+const GENERATED_FALLBACK_PARTS: Record<
+  Category,
+  { hooks: string[]; tails: string[] }
+> = {
+  "감성힙합": {
+    hooks: [
+      "괜찮은 척하다 첫 곡에서 다 들킴",
+      "새벽 감정은 왜 셔플도 눈치가 빠른지",
+      "답장 대신 재생 버튼을 눌러버린 밤",
+      "잊으려 틀었는데 기억만 선명해지는 중",
+      "오늘 분위기, 솔직히 마음보다 위험함",
+      "말 안 해도 첫 소절이 다 설명해주는 밤",
+    ],
+    tails: [
+      "국내 감성힙합·R&B 느좋 셀렉션 🖤",
+      "인디 R&B와 새벽 감정선 사이",
+      "이어폰 속에서만 솔직해지는 노래들",
+      "120분 국내 힙합·R&B 무드",
+      "인스타보다 오래 남는 감성 플리",
+      "고백과 후회 사이에 놓인 트랙들",
+    ],
+  },
+  "그루브힙합": {
+    hooks: [
+      "할 일은 그대로인데 고개부터 끄덕이는 중",
+      "첫 박자에 사무실이 브루클린으로 바뀜",
+      "앉아서 듣는데 걸음걸이만 힙해지는 플리",
+      "커피보다 먼저 텐션을 올려버린 비트",
+      "조용히 일하려다 리듬만 크게 타는 중",
+      "월요일 표정에 그루브 한 스푼 추가",
+    ],
+    tails: [
+      "Groove Hip-hop·Jazzhop Mix 😎",
+      "카페·작업용 Chill Groove BGM",
+      "고개가 먼저 반응하는 재즈합 셀렉션",
+      "뉴욕 무드 R&B·힙합 플레이리스트",
+      "집중과 둠칫 사이의 Work Mix",
+      "하루 종일 흐름 살리는 스무스 비트",
+    ],
+  },
+  "편집샵": {
+    hooks: [
+      "옷보다 음악 어디 거냐고 먼저 묻는 매장",
+      "문 열자마자 공간 가격이 올라가는 선곡",
+      "조명보다 분위기를 더 잘 잡는 팝송들",
+      "팝업은 끝나도 이 플리는 계속 저장됨",
+      "성수동 안 가도 방 안의 감도는 충분함",
+      "손님 발걸음을 한 번 더 붙잡는 첫 곡",
+    ],
+    tails: [
+      "Trendy Shop·Lounge BGM 🛍️",
+      "편집샵 감성 R&B·소프트 하우스",
+      "하루 종일 질리지 않는 매장음악",
+      "쇼룸을 완성하는 세련된 팝 셀렉션",
+      "감도 높은 공간을 위한 All-day Mix",
+      "카페·팝업스토어용 Trendy Playlist",
+    ],
+  },
+  "이지리스닝": {
+    hooks: [
+      "집중하려고 틀었는데 마음까지 정리됨",
+      "노트북 여는 소리와 가장 잘 어울리는 음악",
+      "딴짓하던 손이 조용히 할 일을 시작함",
+      "마감은 가까운데 이상하게 마음은 평온함",
+      "커피가 식어도 흐름은 끊기지 않는 선곡",
+      "오늘 할 일을 천천히 전부 끝내는 리듬",
+    ],
+    tails: [
+      "Study·Work Focus BGM ✍🏻",
+      "카페 재즈와 편안한 이지리스닝",
+      "재택근무 집중력을 위한 Chill Mix",
+      "공부·작업·휴식 사이의 잔잔한 플리",
+      "오래 틀어두기 좋은 Soft Focus Music",
+      "산만함을 낮추는 카페 플레이리스트",
+    ],
+  },
+};
+
 export function normalizeTitleForCompare(title: string): string {
-  return title
-    .normalize("NFKC")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+  const normalized = title.normalize("NFKC").toLowerCase();
+  const withoutPlaylistMark = PLAYLIST_MARKS.reduce(
+    (value, mark) =>
+      value.replace(mark.normalize("NFKC").toLowerCase(), ""),
+    normalized
+  );
+
+  return withoutPlaylistMark
+    .replace(/playlist/gi, "")
+    .replace(/[\p{P}\p{S}\s]+/gu, "");
 }
 
 export function isExampleTitle(category: Category, title: string): boolean {
@@ -79,13 +162,64 @@ export function fallbackTitles(category: Category, excluded: string[]): string[]
     ...excluded.map(normalizeTitleForCompare),
     ...TITLE_EXAMPLES[category].map(normalizeTitleForCompare),
   ]);
-  const pool = FALLBACK_VARIANTS[category].filter(
-    (title) => !blocked.has(normalizeTitleForCompare(title))
+  const { hooks, tails } = GENERATED_FALLBACK_PARTS[category];
+  const usedHooks = new Set(
+    hooks.filter((hook) =>
+      excluded.some((title) =>
+        normalizeTitleForCompare(title).includes(normalizeTitleForCompare(hook))
+      )
+    )
   );
-  return [...pool]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3)
-    .map(stylizePlainPlaylist);
+  const usedTails = new Set(
+    tails.filter((tail) =>
+      excluded.some((title) =>
+        normalizeTitleForCompare(title).includes(normalizeTitleForCompare(tail))
+      )
+    )
+  );
+  const generated = hooks.flatMap((hook, hookIndex) =>
+    tails.map(
+      (tail, tailIndex) => ({
+        title: `${PLAYLIST_MARKS[(hookIndex + tailIndex) % PLAYLIST_MARKS.length]} ${hook} | ${tail}`,
+        hook,
+        tail,
+      })
+    )
+  );
+  const fixedPool = FALLBACK_VARIANTS[category]
+    .filter((title) => !blocked.has(normalizeTitleForCompare(title)))
+    .sort(() => Math.random() - 0.5);
+  const generatedPool = generated
+    .filter(({ title }) => !blocked.has(normalizeTitleForCompare(title)))
+    .sort((a, b) => {
+      const score = (candidate: typeof a) =>
+        (usedHooks.has(candidate.hook) ? 0 : 2) +
+        (usedTails.has(candidate.tail) ? 0 : 1);
+      return score(b) - score(a) || Math.random() - 0.5;
+    });
+  const selected = fixedPool.slice(0, 3);
+  const selectedHooks = new Set<string>();
+  const selectedTails = new Set<string>();
+
+  for (const candidate of generatedPool) {
+    if (selected.length >= 3) break;
+    if (
+      selectedHooks.has(candidate.hook) ||
+      selectedTails.has(candidate.tail)
+    ) {
+      continue;
+    }
+    selected.push(candidate.title);
+    selectedHooks.add(candidate.hook);
+    selectedTails.add(candidate.tail);
+  }
+
+  for (const candidate of generatedPool) {
+    if (selected.length >= 3) break;
+    if (!selected.includes(candidate.title)) selected.push(candidate.title);
+  }
+
+  return selected.slice(0, 3).map(stylizePlainPlaylist);
 }
 
 export function sanitizeRecommendedTitles(

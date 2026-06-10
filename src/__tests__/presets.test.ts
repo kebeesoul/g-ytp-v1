@@ -46,7 +46,7 @@ describe("rowToPreset", () => {
     expect(preset.id).toBe("slot-1");
     expect(preset.layout.anchor).toBe("bottom-left");
     expect(preset.layout.x).toBe(80);
-    expect(preset.layout.y).toBe(-160);
+    expect(preset.layout.y).toBe(160);
     expect(preset.typography.artistFontSize).toBe(32);
     expect(preset.typography.titleFontSize).toBe(42);
     expect(preset.card.enabled).toBe(false);

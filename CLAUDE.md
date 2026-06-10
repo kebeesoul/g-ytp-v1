@@ -23,7 +23,7 @@ Merge with project-specific instructions as needed.
 - **Framework:** Next.js 16 App Router
 - **UI:** shadcn/ui + Tailwind CSS
 - **Database:** Supabase
-- **Package manager:** pnpm
+- **Package manager:** pnpm only. Do not use `npm install`.
 - **Language:** TypeScript (strict)
 
 ## Local Server

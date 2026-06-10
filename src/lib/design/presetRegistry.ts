@@ -7,7 +7,7 @@ const DEFAULT_V1: OverlayPreset = {
   layout: {
     anchor: "bottom-left",
     x: 80,
-    y: -160,
+    y: 160,
     safeMarginX: 96,
     safeMarginY: 72,
   },

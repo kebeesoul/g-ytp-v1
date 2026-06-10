@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { OverlayPresetSchema, type OverlayPreset } from "@/lib/schema";
+import { normalizeOverlayLayout } from "@/lib/overlayPosition";
 
 export const PresetRowSchema = z.object({
   id: z.string(),
@@ -48,13 +49,13 @@ export function rowToPreset(row: PresetRow): OverlayPreset | null {
     id: row.id,
     version: row.version,
     renderer: "png_card",  // drawtext eval is unreliable; all user presets use png_card
-    layout: {
+    layout: normalizeOverlayLayout({
       anchor: row.anchor,
       x: row.offset_x,
       y: row.offset_y,
       safeMarginX: row.safe_margin_x,
       safeMarginY: row.safe_margin_y,
-    },
+    } as OverlayPreset["layout"]),
     typography: {
       artistFontFamily: row.artist_font_family,
       titleFontFamily: row.title_font_family,

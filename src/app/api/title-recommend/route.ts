@@ -23,7 +23,55 @@ const RequestSchema = z.object({
   preferredTitles: z.array(z.string()).default([]),
 });
 
-const GeminiResponseSchema = z.array(z.string()).length(3);
+const GeminiResponseSchema = z.array(z.string()).min(3).max(8);
+const RETRYABLE_GEMINI_STATUSES = new Set([429, 500, 502, 503, 504]);
+const TITLE_GEMINI_MODELS = [GEMINI_MODEL, "gemini-2.5-flash-lite"] as const;
+
+type GeminiResponse = {
+  candidates?: Array<{
+    content?: { parts?: Array<{ thought?: boolean; text?: string }> };
+  }>;
+};
+
+async function requestGeminiTitles(
+  apiKey: string,
+  prompt: string
+): Promise<GeminiResponse> {
+  let lastStatus = 0;
+
+  for (const [attempt, model] of TITLE_GEMINI_MODELS.entries()) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.95,
+            maxOutputTokens: 2048,
+            topP: 0.9,
+            responseMimeType: "application/json",
+          },
+        }),
+        signal: AbortSignal.timeout(15_000),
+      }
+    );
+
+    if (response.ok) return (await response.json()) as GeminiResponse;
+
+    lastStatus = response.status;
+    if (
+      !RETRYABLE_GEMINI_STATUSES.has(response.status) ||
+      attempt === TITLE_GEMINI_MODELS.length - 1
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+
+  throw new Error(`Gemini API error: ${lastStatus}`);
+}
 
 export async function POST(req: Request) {
   let body: unknown;
@@ -55,31 +103,20 @@ export async function POST(req: Request) {
   });
 
   try {
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.95, maxOutputTokens: 512, topP: 0.9 },
-        }),
-        signal: AbortSignal.timeout(15_000),
-      }
-    );
+    const data = await requestGeminiTitles(apiKey, prompt);
 
-    if (!geminiRes.ok) throw new Error(`Gemini API error: ${geminiRes.status}`);
-
-    const data = (await geminiRes.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const rawText =
+      parts.find((part) => !part.thought && part.text)?.text ??
+      parts[0]?.text ??
+      "";
     const cleaned = cleanGeminiJsonText(rawText);
+    const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+    const jsonToParse = arrayMatch ? arrayMatch[0] : cleaned;
 
     let titles: unknown;
     try {
-      titles = JSON.parse(cleaned);
+      titles = JSON.parse(jsonToParse);
     } catch {
       return NextResponse.json({ titles: fallbackTitles(category, blockedTitles) });
     }

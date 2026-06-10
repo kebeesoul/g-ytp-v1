@@ -1,39 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { OverlayPresetSchema, type OverlayPreset } from "@/lib/schema";
 import { FONTS } from "@/lib/thumbnail/constants";
-
-// top anchors: y = distance from top edge (positive = inside canvas)
-// bottom anchors: y = distance above bottom edge (positive = inside canvas)
-// right anchors: x = negative (e.g. -96 → 96px from right)
-const POSITIONS = [
-  { anchor: "top-center" as const,    label: "Top Center",  x: 0,   y: 100 },
-  { anchor: "bottom-center" as const, label: "Bot Center",  x: 0,   y: 205 },
-  { anchor: "bottom-left" as const,   label: "Bot Left",    x: 96,  y: 120 },
-  { anchor: "bottom-right" as const,  label: "Bot Right",   x: -96, y: 120 },
-] as const;
+import { OVERLAY_POSITION_PRESETS } from "@/lib/overlayPosition";
 
 interface OverlayQuickEditorProps {
   preset: OverlayPreset | null;
   slotId: string;
   onSaved: (preset: OverlayPreset) => void;
   onDraftChange?: (draft: OverlayPreset | null) => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
-export function OverlayQuickEditor({ preset, slotId, onSaved, onDraftChange }: OverlayQuickEditorProps) {
+export function OverlayQuickEditor({
+  preset,
+  slotId,
+  onSaved,
+  onDraftChange,
+  onSavingChange,
+}: OverlayQuickEditorProps) {
   const [draft, setDraft] = useState<OverlayPreset | null>(preset);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setDraft(preset);
-    setSaved(false);
-    setError(null);
-    onDraftChange?.(preset);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, slotId]);
 
   if (!draft) return null;
 
@@ -56,22 +46,30 @@ export function OverlayQuickEditor({ preset, slotId, onSaved, onDraftChange }: O
     updateDraft({ ...draft, color: { ...draft.color, [key]: value } });
   }
 
-  function setAnchor(anchor: OverlayPreset["layout"]["anchor"], x: number, y: number) {
+  async function setAnchor(
+    anchor: OverlayPreset["layout"]["anchor"],
+    x: number,
+    y: number
+  ) {
     if (!draft) return;
-    updateDraft({ ...draft, layout: { ...draft.layout, anchor, x, y } });
+    const previous = draft;
+    const next = { ...draft, layout: { ...draft.layout, anchor, x, y } };
+    updateDraft(next);
+    await saveDraft(next, previous);
   }
 
-  async function handleSave() {
-    if (!draft || saving) return;
+  async function saveDraft(next: OverlayPreset, rollback?: OverlayPreset) {
+    if (saving) return;
     setSaving(true);
+    onSavingChange?.(true);
     setError(null);
     try {
       const res = await fetch(`/api/overlay-presets/${slotId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          preset: { ...draft, id: slotId },
-          name: draft.animation.animMemo ?? `슬롯 ${slotId.split("-")[1]}`,
+          preset: { ...next, id: slotId },
+          name: next.animation.animMemo ?? `슬롯 ${slotId.split("-")[1]}`,
         }),
       });
       const body: unknown = await res.json();
@@ -83,10 +81,17 @@ export function OverlayQuickEditor({ preset, slotId, onSaved, onDraftChange }: O
       onSaved(updated);
       setSaved(true);
     } catch (err) {
+      if (rollback) updateDraft(rollback);
       setError(err instanceof Error ? err.message : "저장 실패");
     } finally {
       setSaving(false);
+      onSavingChange?.(false);
     }
+  }
+
+  async function handleSave() {
+    if (!draft) return;
+    await saveDraft(draft);
   }
 
   return (
@@ -97,11 +102,12 @@ export function OverlayQuickEditor({ preset, slotId, onSaved, onDraftChange }: O
       <div className="flex flex-col gap-1">
         <span className="text-[10px] uppercase tracking-wider text-[var(--vm-muted)]">Position</span>
         <div className="grid grid-cols-4 gap-1">
-          {POSITIONS.map(({ anchor, label, x, y }) => (
+          {OVERLAY_POSITION_PRESETS.map(({ anchor, label, x, y }) => (
             <button
               key={anchor}
               type="button"
-              onClick={() => setAnchor(anchor, x, y)}
+              onClick={() => void setAnchor(anchor, x, y)}
+              disabled={saving}
               className={`py-1.5 text-[10px] border transition-colors ${
                 draft.layout.anchor === anchor
                   ? "border-[var(--vm-cyan)] text-[var(--vm-cyan)] bg-[var(--vm-cyan)]/10"

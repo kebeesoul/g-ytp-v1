@@ -1,5 +1,6 @@
 import type { Track, OverlayPreset } from "@/lib/schema";
 import type { OverlayTiming } from "./overlayCompiler";
+import { getDrawtextPosition } from "@/lib/overlayPosition";
 
 const FONT_PATH = process.env.FONT_PATH_KR ?? "/System/Library/Fonts/AppleSDGothicNeo.ttc";
 
@@ -65,13 +66,8 @@ export function compileDrawtextFilters(
     fadeOut
   );
 
-  // y 계산: layout.y < 0 → 하단 기준 (h + layout.y)
-  const yBase = layout.y < 0 ? `h${layout.y}` : `${layout.y}`;
-  const titleY = yBase;
-  const titleLineH = Math.ceil(typography.titleFontSize * typography.lineHeight);
-  const artistY = layout.y < 0
-    ? `h${layout.y - titleLineH}`
-    : `${layout.y - titleLineH}`;
+  const artistPosition = getDrawtextPosition(layout, typography, "artist");
+  const titlePosition = getDrawtextPosition(layout, typography, "title");
 
   const fontfile = escapeDrawtext(FONT_PATH);
   const artistText = escapeDrawtext(track.artist);
@@ -83,8 +79,8 @@ export function compileDrawtextFilters(
   const artistFilter =
     `drawtext=fontfile='${fontfile}'` +
     `:text='${artistText}'` +
-    `:x=${layout.x}` +
-    `:y=${artistY}` +
+    `:x=${artistPosition.x}` +
+    `:y=${artistPosition.y}` +
     `:fontsize=${typography.artistFontSize}` +
     `:fontcolor=${color.artist}` +
     `:alpha=${alpha}`;
@@ -92,8 +88,8 @@ export function compileDrawtextFilters(
   const titleFilter =
     `drawtext=fontfile='${fontfile}'` +
     `:text='${titleText}'` +
-    `:x=${layout.x}` +
-    `:y=${titleY}` +
+    `:x=${titlePosition.x}` +
+    `:y=${titlePosition.y}` +
     `:fontsize=${typography.titleFontSize}` +
     `:fontcolor=${color.title}` +
     `:alpha=${alpha}`;

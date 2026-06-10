@@ -33,4 +33,38 @@ describe("generatePngCards", () => {
     expect(args).not.toContain("color=c=black@0.0:s=1920x1080");
     expect(args).toContain("rgba");
   });
+
+  it("renders bottom-center cards from the same anchor used by previews", async () => {
+    const spec: PngCardSpec = {
+      localPath: "/tmp/card-center.png",
+      track: {
+        id: "track-2",
+        filename: "track.mp3",
+        storagePath: "import/test/track.mp3",
+        artist: "Artist",
+        title: "Title",
+        durationSec: 30,
+        order: 0,
+      },
+      tStart: 1,
+      tEnd: 6,
+      fadeOut: true,
+    };
+    const preset = {
+      ...resolveOverlayPreset("default", 1),
+      layout: {
+        ...resolveOverlayPreset("default", 1).layout,
+        anchor: "bottom-center" as const,
+        x: 0,
+        y: 205,
+      },
+    };
+
+    await generatePngCards([spec], preset);
+
+    const args = vi.mocked(runFfmpeg).mock.calls.at(-1)?.[0].args ?? [];
+    const filter = args[args.indexOf("-vf") + 1] ?? "";
+    expect(filter).toContain(":x=(w-text_w)/2:y=h-205-");
+    expect(filter).not.toContain(":x=0:y=205");
+  });
 });

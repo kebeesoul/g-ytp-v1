@@ -16,17 +16,26 @@ export function assertInsideWorkspace(targetPath: string): void {
 export const workspacePaths = {
   root: WORKSPACE_ROOT,
 
+  importRoot: () =>
+    path.join(WORKSPACE_ROOT, "import"),
+
   importDir: (exportId: string) =>
     path.join(WORKSPACE_ROOT, "import", exportId),
 
   importFile: (exportId: string, filename: string) =>
     path.join(WORKSPACE_ROOT, "import", exportId, filename),
 
+  exportRoot: () =>
+    path.join(WORKSPACE_ROOT, "export"),
+
   exportDir: (exportId: string) =>
     path.join(WORKSPACE_ROOT, "export", exportId),
 
   finalVideo: (exportId: string, format: "mp4" | "mov") =>
     path.join(WORKSPACE_ROOT, "export", exportId, `final.${format}`),
+
+  tmpRoot: () =>
+    path.join(WORKSPACE_ROOT, "tmp"),
 
   tmpDir: (jobId: string) =>
     path.join(WORKSPACE_ROOT, "tmp", jobId),
@@ -39,6 +48,9 @@ export const workspacePaths = {
 
   thumbnail: (exportId: string) =>
     path.join(WORKSPACE_ROOT, "import", exportId, "thumbnail.jpg"),
+
+  thumbnailRoot: () =>
+    path.join(WORKSPACE_ROOT, "thumbnail"),
 
   thumbnailPhotoDir: () =>
     path.join(WORKSPACE_ROOT, "thumbnail", "photos"),

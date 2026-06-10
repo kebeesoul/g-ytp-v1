@@ -87,8 +87,11 @@ export default function TitleRecommend({ tracks, onSelect }: TitleRecommendProps
       });
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data = (await res.json()) as { titles?: string[] };
-      if (!data.titles?.length) throw new Error("추천 결과가 없습니다");
-      setResults(data.titles.map(normalizeTitleText));
+      const nextTitles = data.titles?.map(normalizeTitleText) ?? [];
+      if (nextTitles.length !== 3 || new Set(nextTitles).size !== 3) {
+        throw new Error("서로 다른 추천 제목 3개를 받지 못했습니다");
+      }
+      setResults(nextTitles);
       setStep("result");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "알 수 없는 오류");
@@ -241,9 +244,9 @@ export default function TitleRecommend({ tracks, onSelect }: TitleRecommendProps
     return (
       <div className="mt-2 flex flex-col gap-1.5">
         <p className="mb-0.5 text-xs text-neutral-500">{selectedCategory} · {selectedTone} · 클릭하면 제목으로 적용됩니다</p>
-        {results.map((title, i) => (
+        {results.map((title) => (
           <button
-            key={i}
+            key={title}
             type="button"
             onClick={() => handleTitleClick(title)}
             className="w-full rounded border border-neutral-700 px-2.5 py-1.5 text-left text-[var(--vm-text)] transition-colors hover:border-neutral-400 hover:bg-neutral-800"

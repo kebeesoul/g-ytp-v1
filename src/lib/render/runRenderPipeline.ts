@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { copyFile, mkdir } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -12,6 +13,7 @@ import {
 import { extractThumbnail } from "@/lib/ffmpeg/thumbnail";
 import { masterTracksForRender } from "@/lib/mastering/renderMastering";
 import { generateTracklistText } from "@/lib/tracklist";
+import { computeTrackTimings } from "@/lib/timecode";
 import {
   assertInsideWorkspace,
   fileExists,
@@ -29,6 +31,7 @@ import type { ProjectSnapshot, Track, Background } from "@/lib/schema";
 export async function runRenderPipeline(jobId: string): Promise<void> {
   const supabase = supabaseServer;
   let exportId: string | null = null;
+  let masteredFromCache = false;
   const startTimeMs = Date.now();
 
   try {
@@ -114,15 +117,20 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     ]);
     updateJobQueue(jobId, exportId, "running", 0.05, null, null);
 
-    const renderAudioPaths = snapshot.renderConfig.mastering
-      ? (await masterTracksForRender({
+    let renderAudioPaths = audioPaths;
+    if (snapshot.renderConfig.mastering) {
+      const masteredResult = await masterTracksForRender({
           jobId,
           exportId,
           audioPaths,
           tracks: snapshot.tracks,
           workDir,
-        })).map((track) => track.localPath)
-      : audioPaths;
+      });
+      masteredFromCache = masteredResult.some(
+        (track) => "fromCache" in track && track.fromCache === true
+      );
+      renderAudioPaths = masteredResult.map((track) => track.localPath);
+    }
 
     if (snapshot.renderConfig.mastering) {
       updateJobQueue(jobId, exportId, "running", 0.1, null, null);
@@ -212,6 +220,26 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
     const thumbStoragePath = `import/${exportId}/thumbnail.jpg`;
 
     const completedAt = new Date().toISOString();
+    const renderDurationSec = Math.round((Date.now() - startTimeMs) / 1000);
+    const timings = computeTrackTimings(
+      snapshot.tracks,
+      snapshot.renderConfig.transition
+    );
+    const lastTiming = timings[timings.length - 1];
+    const audioDurationSec =
+      (lastTiming?.endSec ?? 0) * snapshot.renderConfig.playlistRepeatCount;
+    const encoder =
+      snapshot.renderConfig.hwaccel === "videotoolbox" &&
+      process.env.HWACCEL_DISABLED !== "1"
+        ? "hevc_videotoolbox"
+        : "libx264";
+    let outputSizeBytes: number | null = null;
+    try {
+      outputSizeBytes = statSync(outputPath).size;
+    } catch {
+      // Keep telemetry nullable if the completed output cannot be statted.
+    }
+
     await supabase
       .from("render_jobs")
       .update({
@@ -220,6 +248,11 @@ export async function runRenderPipeline(jobId: string): Promise<void> {
         output_path: outputPath,
         completed_at: completedAt,
         updated_at: completedAt,
+        render_duration_sec: renderDurationSec,
+        audio_duration_sec: audioDurationSec,
+        encoder,
+        output_size_bytes: outputSizeBytes,
+        cache_hit: masteredFromCache,
       })
       .eq("id", jobId);
 

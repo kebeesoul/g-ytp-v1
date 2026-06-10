@@ -4,6 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { OverlayPresetSchema, type OverlayPreset } from "@/lib/schema";
 import { FONTS } from "@/lib/thumbnail/constants";
+import {
+  getOverlayCssPosition,
+  getOverlayDragPosition,
+  OVERLAY_POSITION_PRESETS,
+} from "@/lib/overlayPosition";
 
 interface PresetEditorProps {
   slotId: string; // "slot-1" ~ "slot-6"
@@ -81,6 +86,22 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
     setSaved(false);
   }
 
+  function setPosition(
+    anchor: OverlayPreset["layout"]["anchor"],
+    x: number,
+    y: number
+  ) {
+    setDraft((prev) => {
+      const next = {
+        ...prev,
+        layout: { ...prev.layout, anchor, x, y },
+      };
+      onDraftChange?.(next);
+      return next;
+    });
+    setSaved(false);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (saving) return;
@@ -138,26 +159,30 @@ export function PresetEditor({ slotId, preset, onSaved, onDraftChange, onRegiste
       {/* Layout — X/Y only; position can also be set by dragging the preview */}
       <Section title="위치">
         <p className="text-[10px] text-gray-600">미리보기에서 텍스트를 드래그하면 위치가 바뀝니다</p>
+        <div className="grid grid-cols-4 gap-1">
+          {OVERLAY_POSITION_PRESETS.map((position) => (
+            <button
+              key={position.anchor}
+              type="button"
+              onClick={() =>
+                setPosition(position.anchor, position.x, position.y)
+              }
+              className={`border py-1.5 text-[10px] transition-colors ${
+                draft.layout.anchor === position.anchor
+                  ? "border-blue-500 bg-blue-500/10 text-blue-300"
+                  : "border-gray-700 text-gray-500 hover:border-gray-500"
+              }`}
+            >
+              {position.label}
+            </button>
+          ))}
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="X 오프셋">
             <ScrubInput value={draft.layout.x} onChange={(v) => set("layout", "x", v)} step={2} />
-            <button
-              type="button"
-              onClick={() => set("layout", "x", 480)}
-              className="mt-1 w-full rounded py-1 text-xs bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
-            >
-              X 센터
-            </button>
           </Field>
           <Field label="Y 오프셋">
             <ScrubInput value={draft.layout.y} onChange={(v) => set("layout", "y", v)} step={2} />
-            <button
-              type="button"
-              onClick={() => set("layout", "y", -760)}
-              className="mt-1 w-full rounded py-1 text-xs bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
-            >
-              Y 센터
-            </button>
           </Field>
         </div>
       </Section>
@@ -386,27 +411,8 @@ export function PresetPreview({
   onPositionChange?: (x: number, y: number) => void;
 }) {
   const { anchor, x, y } = draft.layout;
-  const xPx = x * PREVIEW_SCALE;
-  const yPx = y * PREVIEW_SCALE;
   const rowGapPx = draft.typography.lineHeight * PREVIEW_SCALE;
-
-  // Anchor-aware positioning — mirrors OverlayMock in BackgroundPicker
-  let posStyle: React.CSSProperties;
-  if (anchor === "top-left") {
-    posStyle = { left: xPx, top: yPx };
-  } else if (anchor === "top-center") {
-    posStyle = { left: `calc(50% + ${xPx}px)`, top: yPx, transform: "translateX(-50%)" };
-  } else if (anchor === "top-right") {
-    posStyle = { right: -xPx, top: yPx };
-  } else if (anchor === "bottom-left") {
-    posStyle = { left: xPx, bottom: yPx };
-  } else if (anchor === "bottom-center") {
-    posStyle = { left: `calc(50% + ${xPx}px)`, bottom: yPx, transform: "translateX(-50%)" };
-  } else if (anchor === "bottom-right") {
-    posStyle = { right: -xPx, bottom: yPx };
-  } else {
-    posStyle = { left: `calc(50% + ${xPx}px)`, top: `calc(50% + ${yPx}px)`, transform: "translate(-50%, -50%)" };
-  }
+  const posStyle = getOverlayCssPosition({ ...draft.layout, anchor, x, y }, PREVIEW_SCALE);
 
   const artistFont = FONTS.find((f) => f.name === draft.typography.artistFontFamily);
   const titleFont = FONTS.find((f) => f.name === draft.typography.titleFontFamily);
@@ -432,7 +438,16 @@ export function PresetPreview({
     if (!dragStart.current || !onPositionChange) return;
     const dx = Math.round((e.clientX - dragStart.current.clientX) / PREVIEW_SCALE);
     const dy = Math.round((e.clientY - dragStart.current.clientY) / PREVIEW_SCALE);
-    onPositionChange(dragStart.current.layoutX + dx, dragStart.current.layoutY + dy);
+    const position = getOverlayDragPosition(
+      {
+        ...draft.layout,
+        x: dragStart.current.layoutX,
+        y: dragStart.current.layoutY,
+      },
+      dx,
+      dy
+    );
+    onPositionChange(position.x, position.y);
   }
 
   function handlePointerUp() {
@@ -469,6 +484,7 @@ export function PresetPreview({
               fontFamily: artistCss,
               fontSize: draft.typography.artistFontSize * PREVIEW_SCALE,
               fontWeight: draft.typography.artistWeight,
+              lineHeight: `${draft.typography.artistFontSize * PREVIEW_SCALE}px`,
               fontStyle: draft.typography.artistItalic ? "italic" : "normal",
               textDecoration: draft.typography.artistUnderline ? "underline" : "none",
               color: draft.color.artist,
@@ -484,6 +500,7 @@ export function PresetPreview({
               fontFamily: titleCss,
               fontSize: draft.typography.titleFontSize * PREVIEW_SCALE,
               fontWeight: draft.typography.titleWeight,
+              lineHeight: `${draft.typography.titleFontSize * PREVIEW_SCALE}px`,
               fontStyle: draft.typography.titleItalic ? "italic" : "normal",
               textDecoration: draft.typography.titleUnderline ? "underline" : "none",
               color: draft.color.title,
