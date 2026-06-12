@@ -48,6 +48,7 @@ next-env.d.ts
 /workspace/export/
 /workspace/thumbnail/
 /workspace/mastered-cache/
+/workspace/youtube-auth/
 !/workspace/.gitkeep
 
 # package manager lock (pnpm project — npm lock not needed)

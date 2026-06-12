@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { ProjectRecord } from "@/lib/schema";
 import { getPublicUrl } from "@/lib/supabase/publicUrl";
+import { UploadButton } from "@/components/youtube/UploadButton";
 
 interface HistoryCardProps {
   record: ProjectRecord;
@@ -83,6 +84,8 @@ export function HistoryCard({ record, onDeleted }: HistoryCardProps) {
             {deleting ? "삭제 중..." : "삭제"}
           </button>
         </div>
+
+        <UploadButton exportId={record.id} />
       </div>
     </div>
   );

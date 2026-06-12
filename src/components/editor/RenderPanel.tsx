@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRenderJob } from "@/lib/useRenderJob";
 import type { ProjectSnapshot } from "@/lib/schema";
 import { FIXED_MASTERING_SETTINGS } from "@/lib/mastering/constants";
+import { UploadButton } from "@/components/youtube/UploadButton";
 
 interface RenderPanelProps {
   exportId: string;  // = editorSessionId at click time
@@ -154,6 +155,13 @@ export function RenderPanel({
       {isDone && (
         <div className="vm-panel mt-auto border-[var(--vm-cyan)] px-3 py-2 text-[11px] uppercase tracking-[0.14em] text-[var(--vm-cyan)]">
           Export complete
+        </div>
+      )}
+
+      {isDone && (
+        <div className="vm-panel vm-panel-pad flex flex-col gap-2">
+          <span className="vm-label">YouTube</span>
+          <UploadButton exportId={exportId} />
         </div>
       )}
 

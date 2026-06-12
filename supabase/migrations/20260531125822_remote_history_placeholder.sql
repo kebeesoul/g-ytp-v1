@@ -1,0 +1,4 @@
+-- Remote migration history placeholder.
+-- This version already exists in the linked Supabase project, but the original SQL
+-- is not present in this repository. Keep this file no-op to align CLI history
+-- without rewriting the remote schema.
