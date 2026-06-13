@@ -25,6 +25,55 @@ function contentTypeForPath(pathname: string): string {
   return "application/octet-stream";
 }
 
+function streamFile(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {
+  const fileStream = createReadStream(
+    /* turbopackIgnore: true */ filePath,
+    range ? { start: range.start, end: range.end } : undefined
+  );
+  return new ReadableStream({
+    start(controller) {
+      fileStream.on("data", (chunk) =>
+        controller.enqueue(chunk instanceof Buffer ? chunk : Buffer.from(chunk))
+      );
+      fileStream.on("end", () => controller.close());
+      fileStream.on("error", (err) => controller.error(err));
+    },
+    cancel() {
+      fileStream.destroy();
+    },
+  });
+}
+
+function parseRange(rangeHeader: string | null, fileSize: number): { start: number; end: number } | null {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+  if (!match) return null;
+
+  const [, startRaw, endRaw] = match;
+  if (!startRaw && !endRaw) return null;
+
+  if (!startRaw) {
+    const suffixLength = Number.parseInt(endRaw, 10);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null;
+    const start = Math.max(fileSize - suffixLength, 0);
+    return { start, end: fileSize - 1 };
+  }
+
+  const start = Number.parseInt(startRaw, 10);
+  const end = endRaw ? Number.parseInt(endRaw, 10) : fileSize - 1;
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 0 ||
+    end < start ||
+    start >= fileSize
+  ) {
+    return null;
+  }
+
+  return { start, end: Math.min(end, fileSize - 1) };
+}
+
 export async function GET(
   req: Request,
   { params }: RouteParams
@@ -53,31 +102,39 @@ export async function GET(
     return Response.json({ error: "not found" }, { status: 404 });
   }
 
-  const fileStream = createReadStream(/* turbopackIgnore: true */ filePath);
-  const readable = new ReadableStream({
-    start(controller) {
-      fileStream.on("data", (chunk) =>
-        controller.enqueue(chunk instanceof Buffer ? chunk : Buffer.from(chunk))
-      );
-      fileStream.on("end", () => controller.close());
-      fileStream.on("error", (err) => controller.error(err));
-    },
-    cancel() {
-      fileStream.destroy();
-    },
-  });
-
   const url = new URL(req.url);
   const headers = new Headers({
     "Content-Type": contentTypeForPath(relativePath),
     "Content-Length": fileSize.toString(),
     "Cache-Control": "no-store",
+    "Accept-Ranges": "bytes",
   });
   if (url.searchParams.get("download") === "1") {
     headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(relativePath.split("/").at(-1) ?? "download")}"`);
   }
 
-  return new Response(readable, {
+  const requestedRange = req.headers.get("range");
+  if (requestedRange) {
+    const range = parseRange(requestedRange, fileSize);
+    if (!range) {
+      return new Response(null, {
+        status: 416,
+        headers: {
+          "Content-Range": `bytes */${fileSize}`,
+          "Accept-Ranges": "bytes",
+        },
+      });
+    }
+
+    headers.set("Content-Length", String(range.end - range.start + 1));
+    headers.set("Content-Range", `bytes ${range.start}-${range.end}/${fileSize}`);
+    return new Response(streamFile(filePath, range), {
+      status: 206,
+      headers,
+    });
+  }
+
+  return new Response(streamFile(filePath), {
     headers,
   });
 }
