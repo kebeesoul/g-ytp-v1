@@ -60,11 +60,11 @@ describe("Thumbnail Phase 1 integration", () => {
   });
 
   it("adds Thumbnail to the global navigation", async () => {
-    const layoutCode = await readFile(
-      new URL("../app/layout.tsx", import.meta.url),
+    const navCode = await readFile(
+      new URL("../components/layout/TopNav.tsx", import.meta.url),
       "utf8"
     );
-    expect(layoutCode).toContain('href="/thumbnail"');
-    expect(layoutCode).toContain("Thumbnail");
+    expect(navCode).toContain('href: "/thumbnail"');
+    expect(navCode).toContain("Thumbnail");
   });
 });

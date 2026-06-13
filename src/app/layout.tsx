@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { TopNav } from "@/components/layout/TopNav";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,42 +21,7 @@ export default function RootLayout({
             <span className="text-white">YTP MAKER</span>
             <span className="text-[var(--vm-muted)]"> | published by galaxymap</span>
           </Link>
-          <nav className="flex items-center gap-5">
-            <Link
-              href="/editor"
-              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
-            >
-              Editor
-            </Link>
-            <Link
-              href="/history"
-              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
-            >
-              History
-            </Link>
-            <Link
-              href="/thumbnail"
-              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
-            >
-              Thumbnail
-            </Link>
-            <Link
-              href="/ytmp3"
-              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
-            >
-              YTMP3
-            </Link>
-            <Link
-              href="/settings"
-              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
-            >
-              Overlay
-            </Link>
-            <span className="hidden items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-[var(--vm-subtle)] sm:flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--vm-cyan)]" />
-              Ready
-            </span>
-          </nav>
+          <TopNav />
         </header>
         <main className="flex flex-col flex-1">{children}</main>
       </body>
