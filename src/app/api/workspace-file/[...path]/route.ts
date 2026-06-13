@@ -26,7 +26,7 @@ function contentTypeForPath(pathname: string): string {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: RouteParams
 ): Promise<Response> {
   const { path } = await params;
@@ -34,6 +34,7 @@ export async function GET(
   if (
     !relativePath.startsWith("import/") &&
     !relativePath.startsWith("export/") &&
+    !relativePath.startsWith("ytmp3/") &&
     !relativePath.startsWith("thumbnail/photos/") &&
     !relativePath.startsWith("thumbnail/selected/")
   ) {
@@ -66,11 +67,17 @@ export async function GET(
     },
   });
 
+  const url = new URL(req.url);
+  const headers = new Headers({
+    "Content-Type": contentTypeForPath(relativePath),
+    "Content-Length": fileSize.toString(),
+    "Cache-Control": "no-store",
+  });
+  if (url.searchParams.get("download") === "1") {
+    headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(relativePath.split("/").at(-1) ?? "download")}"`);
+  }
+
   return new Response(readable, {
-    headers: {
-      "Content-Type": contentTypeForPath(relativePath),
-      "Content-Length": fileSize.toString(),
-      "Cache-Control": "no-store",
-    },
+    headers,
   });
 }

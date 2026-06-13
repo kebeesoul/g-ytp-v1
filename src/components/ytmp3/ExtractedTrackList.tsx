@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { TrackSchema, type Track } from "@/lib/schema";
+import { getWorkspaceFileUrl } from "@/lib/workspace/publicUrl";
 import { YtmpTrackSchema, type YtmpTrack } from "@/lib/ytmp3/schema";
 
 const TracksResponseSchema = z.array(YtmpTrackSchema);
@@ -56,13 +57,17 @@ function withSequentialOrder(tracks: Track[]): Track[] {
   return tracks.map((track, index) => ({ ...track, order: index }));
 }
 
+function downloadUrlForTrack(track: YtmpTrack): string {
+  return `${getWorkspaceFileUrl(track.local_path)}?download=1`;
+}
+
 export function ExtractedTrackList({ refreshKey }: ExtractedTrackListProps) {
+  const router = useRouter();
   const [tracks, setTracks] = useState<YtmpTrack[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [added, setAdded] = useState(false);
 
   async function loadTracks(): Promise<void> {
     const res = await fetch("/api/ytmp3/tracks", { cache: "no-store" });
@@ -95,8 +100,8 @@ export function ExtractedTrackList({ refreshKey }: ExtractedTrackListProps) {
       const merged = withSequentialOrder([...draft.tracks, ...newTracks]);
       window.localStorage.setItem(EDITOR_DRAFT_KEY, JSON.stringify({ ...draft, tracks: merged }));
       setSelectedIds(new Set());
-      setAdded(true);
       await loadTracks();
+      router.push("/editor");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Editor 추가 실패");
     } finally {
@@ -111,11 +116,20 @@ export function ExtractedTrackList({ refreshKey }: ExtractedTrackListProps) {
     });
   }
 
+  const allDownloadUrl = "/api/ytmp3/download";
+
   return (
     <section className="vm-panel vm-panel-pad flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <span className="vm-label">Extracted Tracks</span>
         <div className="flex items-center gap-2">
+          <a
+            href={allDownloadUrl}
+            className={`vm-button-secondary ${tracks.length === 0 ? "pointer-events-none opacity-40" : ""}`}
+            aria-disabled={tracks.length === 0}
+          >
+            전체 다운로드
+          </a>
           <button
             onClick={toggleSelectAll}
             disabled={tracks.length === 0}
@@ -137,7 +151,7 @@ export function ExtractedTrackList({ refreshKey }: ExtractedTrackListProps) {
         {tracks.length === 0 ? (
           <p className="py-4 text-sm text-[var(--vm-subtle)]">추출 완료 트랙 없음</p>
         ) : tracks.map((track) => (
-          <div key={track.id} className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 py-3 text-sm">
+          <div key={track.id} className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 py-3 text-sm">
             <input
               type="checkbox"
               checked={selectedIds.has(track.id)}
@@ -155,11 +169,17 @@ export function ExtractedTrackList({ refreshKey }: ExtractedTrackListProps) {
               <p className="text-[11px] text-[var(--vm-subtle)]">{formatDuration(track.duration_sec)}</p>
             </div>
             <button
-              onClick={() => setPreviewPath(track.local_path)}
+              onClick={() => setPreviewPath((current) => current === track.local_path ? null : track.local_path)}
               className="vm-button-secondary"
             >
               ▶ 미리듣기
             </button>
+            <a
+              href={downloadUrlForTrack(track)}
+              className="vm-button-secondary"
+            >
+              다운로드
+            </a>
             <span className="text-[11px] text-[var(--vm-subtle)]">
               {track.added_to_editor ? "added" : ""}
             </span>
@@ -168,12 +188,7 @@ export function ExtractedTrackList({ refreshKey }: ExtractedTrackListProps) {
       </div>
 
       {previewPath && (
-        <audio controls src={`/api/workspace-file/${previewPath}`} className="w-full" />
-      )}
-      {added && (
-        <Link href="/editor" className="text-sm text-[var(--vm-cyan)] underline">
-          Editor로 이동
-        </Link>
+        <audio controls autoPlay src={getWorkspaceFileUrl(previewPath)} className="w-full" />
       )}
       {error && <p className="text-xs text-[var(--vm-error)]">{error}</p>}
     </section>
