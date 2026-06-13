@@ -69,6 +69,12 @@ export const workspacePaths = {
 
   masteredCacheFile: (cacheKey: string) =>
     path.join(WORKSPACE_ROOT, "mastered-cache", `${cacheKey}.wav`),
+
+  ytmp3Dir: () =>
+    path.join(WORKSPACE_ROOT, "ytmp3"),
+
+  ytmp3File: (trackId: string) =>
+    path.join(WORKSPACE_ROOT, "ytmp3", `${trackId}.mp3`),
 };
 
 export function resolveStoragePath(relativePath: string): string {

@@ -40,6 +40,12 @@ export default function RootLayout({
               Thumbnail
             </Link>
             <Link
+              href="/ytmp3"
+              className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
+            >
+              YTMP3
+            </Link>
+            <Link
               href="/settings"
               className="text-[11px] uppercase tracking-[0.18em] text-[var(--vm-subtle)] transition-colors hover:text-white"
             >
