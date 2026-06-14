@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { z } from "zod";
 import type { AudioConfig, TransitionConfig } from "@/lib/schema";
-import { activeProcesses } from "@/lib/render/processRegistry";
+import { registerProcess, unregisterProcess } from "@/lib/render/processRegistry";
 import { runFfmpeg } from "./runFfmpeg";
 import { resolveFfmpegPath } from "./resolveFfmpeg";
 
@@ -159,17 +159,17 @@ function captureLoudnormStats(
       { stdio: ["ignore", "ignore", "pipe"] }
     );
 
-    if (jobId) activeProcesses.set(jobId, proc);
+    registerProcess(jobId, proc);
     let stderr = "";
     proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 
     proc.on("close", (code) => {
-      if (jobId) activeProcesses.delete(jobId);
+      unregisterProcess(jobId, proc);
       if (code === 0) resolve(stderr);
       else reject(new Error(`loudnorm analysis failed (code ${code}):\n${stderr.slice(-2000)}`));
     });
     proc.on("error", (err) => {
-      if (jobId) activeProcesses.delete(jobId);
+      unregisterProcess(jobId, proc);
       reject(err);
     });
   });

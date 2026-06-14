@@ -2,12 +2,14 @@ import { z } from "zod";
 import { GEMINI_MODEL, hasGeminiApiKey, cleanGeminiJsonText } from "@/lib/gemini";
 import { buildTitlePrompt } from "@/lib/titleRecommend/buildPrompt";
 import { sanitizeRecommendedTitles, fallbackTitles } from "@/lib/titleRecommend/recommendation";
-import type { CategoryKey } from "@/lib/titleRecommend/categories";
+import type { Category } from "@/lib/titleRecommend/categories";
 import { CATEGORY_KEYS } from "@/lib/titleRecommend/categories";
+import type { TitleTone } from "@/lib/titleRecommend/tones";
+import { TITLE_TONE_KEYS } from "@/lib/titleRecommend/tones";
 
 const BodySchema = z.object({
-  category: z.enum(CATEGORY_KEYS as [CategoryKey, ...CategoryKey[]]),
-  tone: z.string().min(1),
+  category: z.enum(CATEGORY_KEYS as [Category, ...Category[]]),
+  tone: z.enum(TITLE_TONE_KEYS as [TitleTone, ...TitleTone[]]),
   excludedTitles: z.array(z.string()).default([]),
   preferredTitles: z.array(z.string()).default([]),
   tracks: z.array(z.object({ artist: z.string(), title: z.string() })),

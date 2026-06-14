@@ -13,6 +13,8 @@ interface RenderPanelProps {
   onMasteringChange: (v: boolean) => void;
   playlistRepeatCount: number;
   onPlaylistRepeatCountChange: (v: number) => void;
+  outputFormat: ProjectSnapshot["renderConfig"]["outputFormat"];
+  onOutputFormatChange: (v: ProjectSnapshot["renderConfig"]["outputFormat"]) => void;
   disabled?: boolean;
 }
 
@@ -30,6 +32,8 @@ export function RenderPanel({
   onMasteringChange,
   playlistRepeatCount,
   onPlaylistRepeatCountChange,
+  outputFormat,
+  onOutputFormatChange,
   disabled = false,
 }: RenderPanelProps) {
   const { jobId, status, submitting, cancelling, error, startRender, cancelRender } = useRenderJob();
@@ -101,6 +105,19 @@ export function RenderPanel({
         <span className="text-[11px] leading-5 text-[var(--vm-muted)]">
           전체 플레이리스트 길이를 선택한 횟수만큼 반복합니다.
         </span>
+      </div>
+
+      <div className="vm-panel vm-panel-pad flex flex-col gap-2">
+        <span className="vm-label">Output Format</span>
+        <select
+          value={outputFormat}
+          onChange={(e) => onOutputFormatChange(e.target.value as ProjectSnapshot["renderConfig"]["outputFormat"])}
+          disabled={isRunning}
+          className="vm-input"
+        >
+          <option value="mp4">mp4</option>
+          <option value="mov">mov</option>
+        </select>
       </div>
 
       {/* Export / 중지 버튼 */}

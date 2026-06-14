@@ -32,6 +32,7 @@ const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
   audio: { normalize: "ebu_r128", targetLufs: -14, truePeakDb: -1 },
   thumbnail: { mode: "extract", presetId: "default", presetVersion: 1 },
   waveform: { style: "off" },
+  playlistRepeatCount: 1,
   mastering: false,
   outputFormat: "mp4",
   audioBitrateKbps: 192,
@@ -72,6 +73,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [hashtags, setHashtags] = useState<string[]>([]);
   // Separate input state — only synced to hashtags on blur to avoid per-keystroke snapshot updates.
   const [hashtagInput, setHashtagInput] = useState("");
+  const [mastering, setMastering] = useState(false);
+  const [playlistRepeatCount, setPlaylistRepeatCount] = useState(1);
   const [outputFormat, setOutputFormat] = useState<"mp4" | "mov">("mp4");
 
   const [overlayPresetId, setOverlayPresetId] = useState("default");
@@ -159,6 +162,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
         setOverlayPresetId(snapshot.renderConfig.overlay.presetId);
         setHashtags(snapshot.hashtags);
         setHashtagInput(snapshot.hashtags.join(", "));
+        setMastering(snapshot.renderConfig.mastering);
+        setPlaylistRepeatCount(snapshot.renderConfig.playlistRepeatCount);
         setOutputFormat(snapshot.renderConfig.outputFormat);
         setHydrateLoading(false);
       } catch (err) {
@@ -187,6 +192,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
           presetVersion: presets.find((p) => p?.id === overlayPresetId)?.version ?? 1,
         },
         waveform: { style: waveformStyle },
+        mastering,
+        playlistRepeatCount,
         outputFormat,
       },
       hashtags,
@@ -250,7 +257,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const snapshot = useMemo(
     () => buildSnapshot(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [title, tracks, background, transitionType, crossfadeSec, overlayMode, overlayPresetId, presets, outputFormat, hashtags, waveformStyle]
+    [title, tracks, background, transitionType, crossfadeSec, overlayMode, overlayPresetId, presets, mastering, playlistRepeatCount, outputFormat, hashtags, waveformStyle]
   );
   const snapshotValid = !("error" in snapshot);
 
@@ -293,6 +300,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             onDelete={handleDelete}
             onPlay={handlePlay}
             onFilesAdded={handleFilesAdded}
+            activeTrackId={activeTrackId}
+            playlistRepeatCount={playlistRepeatCount}
           />
 
           <AudioPlayer storagePath={activeStoragePath} trackId={activeTrackId} />
@@ -372,6 +381,10 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
           <RenderPanel
             exportId={editorSessionId}
             buildSnapshot={buildSnapshot}
+            mastering={mastering}
+            onMasteringChange={setMastering}
+            playlistRepeatCount={playlistRepeatCount}
+            onPlaylistRepeatCountChange={setPlaylistRepeatCount}
             outputFormat={outputFormat}
             onOutputFormatChange={setOutputFormat}
           />

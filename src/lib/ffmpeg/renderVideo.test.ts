@@ -43,6 +43,7 @@ const baseSnapshot: ProjectSnapshot = {
     waveform: { style: "off" },
     playlistRepeatCount: 1,
     mastering: false,
+    outputFormat: "mp4",
     audioBitrateKbps: 192,
     resolution: [1920, 1080],
     hwaccel: "videotoolbox",

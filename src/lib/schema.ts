@@ -133,6 +133,7 @@ export const RenderConfigSchema = z.object({
   waveform: WaveformConfigSchema.default({ style: "off" }),
   playlistRepeatCount: z.number().int().min(1).max(5).default(1),
   mastering: z.boolean().default(false),
+  outputFormat: z.enum(["mp4", "mov"]).default("mp4"),
   audioBitrateKbps: z.literal(192),
   resolution: z.tuple([z.literal(1920), z.literal(1080)]),
   hwaccel: z.enum(["videotoolbox", "none"]).default("videotoolbox"),

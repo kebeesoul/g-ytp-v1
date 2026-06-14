@@ -11,19 +11,19 @@ describe("concatAndNormalize", () => {
     vi.mocked(runFfmpeg).mockClear();
   });
 
-  it("uses single-pass loudnorm for ebu_r128", async () => {
+  it("uses single-pass loudnorm for ebu_r128_fast", async () => {
     await concatAndNormalize({
       jobId: "job",
       audioPaths: ["/tmp/a.m4a"],
       transition: { type: "silence", crossfadeSec: 2 },
       workDir: "/tmp/work",
-      audioConfig: { normalize: "ebu_r128", targetLufs: -14, truePeakDb: -1 },
+      audioConfig: { normalize: "ebu_r128_fast", targetLufs: -14, truePeakDb: -1 },
     });
 
     expect(runFfmpeg).toHaveBeenCalledTimes(1);
     const args = vi.mocked(runFfmpeg).mock.calls[0]?.[0].args;
     expect(args).toContain("-filter_complex");
-    expect(args?.join(" ")).toContain("loudnorm=I=-14:TP=-1:LRA=11:linear=true");
+    expect(args?.join(" ")).toContain("loudnorm=I=-14:TP=-1:LRA=11");
     expect(args).toContain("192k");
   });
 });

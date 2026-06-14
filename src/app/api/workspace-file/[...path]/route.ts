@@ -41,10 +41,12 @@ interface RouteParams {
 export async function GET(_req: Request, { params }: RouteParams): Promise<Response> {
   const { path: segments } = await params;
   const storagePath = segments.join("/");
+  const relativePath = storagePath;
+  const isSelectedThumbnail = relativePath.startsWith("thumbnail/selected/");
 
   // Session ownership check for import paths.
   // import/{sessionId}/... — the session cookie must have been set by /api/upload or /api/upload-bg.
-  if (segments[0] === "import") {
+  if (segments[0] === "import" && !isSelectedThumbnail) {
     const sessionId = segments[1];
     if (!sessionId || !hasSessionCookie(_req, sessionId)) {
       return new Response("forbidden", { status: 403 });
