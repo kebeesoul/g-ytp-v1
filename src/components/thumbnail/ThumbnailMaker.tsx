@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadCanvas } from "@/lib/thumbnail/canvas";
 import { DEFAULT_THUMBNAIL_SETTINGS } from "@/lib/thumbnail/constants";
 import { BackgroundSchema } from "@/lib/schema";
+import { getWorkspaceFileUrl } from "@/lib/workspace/publicUrl";
 import { ThumbnailPresetSchema, ThumbnailSettingsSchema } from "@/lib/thumbnail/schema";
 import type { ColorId, FontId, OverlayId, PositionId, TextCaseId } from "@/lib/thumbnail/constants";
 import type { ThumbnailPreset, ThumbnailSettings } from "@/lib/thumbnail/schema";
@@ -28,6 +29,7 @@ interface ThumbnailMakerProps {
 
 const SELECTED_THUMBNAIL_KEY = "gytp:selected-thumbnail-background";
 const SELECTED_PHOTO_BG_KEY = "gytp:selected-photo-background";
+const THUMBNAIL_SOURCE_BG_KEY = "gytp:thumbnail-source-background";
 
 function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -69,6 +71,25 @@ export function ThumbnailMaker({ initialPresets }: ThumbnailMakerProps) {
       if (photoSrc?.startsWith("blob:")) URL.revokeObjectURL(photoSrc);
     };
   }, [photoSrc]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(THUMBNAIL_SOURCE_BG_KEY);
+      if (!raw) return;
+      window.localStorage.removeItem(THUMBNAIL_SOURCE_BG_KEY);
+
+      const parsed = BackgroundSchema.safeParse(JSON.parse(raw));
+      if (!parsed.success || parsed.data.kind !== "image") return;
+
+      queueMicrotask(() => {
+        setPhotoSrc(getWorkspaceFileUrl(parsed.data.storagePath));
+        setLocalPath(parsed.data.storagePath);
+        setStatus("Editor image loaded");
+      });
+    } catch {
+      window.localStorage.removeItem(THUMBNAIL_SOURCE_BG_KEY);
+    }
+  }, []);
 
   async function handlePhoto(file: File) {
     const objectUrl = URL.createObjectURL(file);
