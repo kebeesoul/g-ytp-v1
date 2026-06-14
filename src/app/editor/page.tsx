@@ -18,8 +18,10 @@ import { TrackList } from "@/components/editor/TrackList";
 import { AudioPlayer } from "@/components/editor/AudioPlayer";
 import { BackgroundPicker } from "@/components/editor/BackgroundPicker";
 import { OverlayPresetSlots } from "@/components/editor/OverlayPresetSlots";
+import { OverlayQuickEditor } from "@/components/editor/OverlayQuickEditor";
 import { RenderPanel } from "@/components/editor/RenderPanel";
 import { TracklistExport } from "@/components/editor/TracklistExport";
+import TitleRecommend from "@/components/editor/TitleRecommend";
 import { safeRandomUUID } from "@/lib/uuid";
 
 interface EditorPageProps {
@@ -39,6 +41,10 @@ const DEFAULT_RENDER_CONFIG: ProjectSnapshot["renderConfig"] = {
   resolution: [1920, 1080],
   hwaccel: "videotoolbox",
 };
+
+const HashtagsRecommendResponseSchema = z.object({
+  hashtags: z.array(z.string()),
+});
 
 function compareFilename(a: { filename: string }, b: { filename: string }): number {
   return a.filename.localeCompare(b.filename, undefined, {
@@ -73,6 +79,8 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
   const [hashtags, setHashtags] = useState<string[]>([]);
   // Separate input state — only synced to hashtags on blur to avoid per-keystroke snapshot updates.
   const [hashtagInput, setHashtagInput] = useState("");
+  const [hashtagRecommendLoading, setHashtagRecommendLoading] = useState(false);
+  const [hashtagRecommendError, setHashtagRecommendError] = useState<string | null>(null);
   const [mastering, setMastering] = useState(false);
   const [playlistRepeatCount, setPlaylistRepeatCount] = useState(1);
   const [outputFormat, setOutputFormat] = useState<"mp4" | "mov">("mp4");
@@ -254,12 +262,51 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
     }
   }
 
+  function handleOverlaySaved(preset: OverlayPreset) {
+    setPresets((prev) => prev.map((item) => (item?.id === preset.id ? preset : item)));
+  }
+
+  async function handleRecommendHashtags() {
+    const trackLines = tracks.map((track) => `${track.artist} - ${track.title}`);
+    const description = [title, ...trackLines].filter(Boolean).join("\n").trim();
+    if (!description) {
+      setHashtagRecommendError("제목 또는 트랙이 필요합니다.");
+      return;
+    }
+
+    setHashtagRecommendLoading(true);
+    setHashtagRecommendError(null);
+    try {
+      const res = await fetch("/api/hashtags-recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description }),
+      });
+      const raw: unknown = await res.json();
+      if (!res.ok) {
+        const body = raw as { error?: string };
+        throw new Error(body.error ?? `추천 실패 (${res.status})`);
+      }
+      const parsed = HashtagsRecommendResponseSchema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error("서버 응답 형식 오류");
+      }
+      setHashtags(parsed.data.hashtags);
+      setHashtagInput(parsed.data.hashtags.join(", "));
+    } catch (err) {
+      setHashtagRecommendError(err instanceof Error ? err.message : "해시태그 추천 실패");
+    } finally {
+      setHashtagRecommendLoading(false);
+    }
+  }
+
   const snapshot = useMemo(
     () => buildSnapshot(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [title, tracks, background, transitionType, crossfadeSec, overlayMode, overlayPresetId, presets, mastering, playlistRepeatCount, outputFormat, hashtags, waveformStyle]
   );
   const snapshotValid = !("error" in snapshot);
+  const selectedOverlayPreset = presets.find((preset) => preset?.id === overlayPresetId) ?? null;
 
   if (hydrateLoading) {
     return (
@@ -292,6 +339,7 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="flex flex-col gap-6">
           <TitleInput value={title} onChange={setTitle} />
+          <TitleRecommend tracks={tracks} onSelect={setTitle} />
 
           <TrackList
             tracks={tracks}
@@ -319,6 +367,15 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
             selectedId={overlayPresetId}
             onChange={setOverlayPresetId}
           />
+
+          {selectedOverlayPreset && (
+            <OverlayQuickEditor
+              key={selectedOverlayPreset.id}
+              preset={selectedOverlayPreset}
+              slotId={selectedOverlayPreset.id}
+              onSaved={handleOverlaySaved}
+            />
+          )}
 
           <div className="flex flex-col gap-3 rounded-md border border-gray-700 bg-gray-900 p-4">
             <span className="text-sm font-medium text-gray-300">렌더 설정</span>
@@ -375,6 +432,17 @@ export default function EditorPage({ searchParams }: EditorPageProps) {
                 placeholder="#lofi, #chill"
                 className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
               />
+              <button
+                type="button"
+                onClick={() => void handleRecommendHashtags()}
+                disabled={hashtagRecommendLoading}
+                className="mt-1 self-start text-xs text-neutral-400 transition-colors hover:text-neutral-200 disabled:cursor-wait disabled:opacity-60"
+              >
+                {hashtagRecommendLoading ? "해시태그 추천 중..." : "✦ 해시태그 추천"}
+              </button>
+              {hashtagRecommendError && (
+                <p className="text-xs text-red-400">오류: {hashtagRecommendError}</p>
+              )}
             </div>
           </div>
 
