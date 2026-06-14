@@ -26,14 +26,28 @@ export interface UseRenderJobResult {
   clear: () => void;
 }
 
+function readStoredJobId(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(LS_KEY);
+  if (!raw) return null;
+  try {
+    return ActiveRenderSchema.parse(JSON.parse(raw)).jobId;
+  } catch {
+    localStorage.removeItem(LS_KEY);
+    return null;
+  }
+}
+
 // localStorage A안 + 5초 폴링 + 페이지 복귀 시 hydrate
 export function useRenderJob(): UseRenderJobResult {
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(() => readStoredJobId());
   const [status, setStatus] = useState<JobStatus | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasStatus = status !== null;
+  const renderStatus = status?.status;
 
   const fetchStatus = useCallback(async (id: string): Promise<JobStatus | null> => {
     const controller = new AbortController();
@@ -63,22 +77,17 @@ export function useRenderJob(): UseRenderJobResult {
 
   // 마운트 시 localStorage hydrate (§9.1 — 페이지 이탈/복귀)
   useEffect(() => {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return;
-    try {
-      const parsed = ActiveRenderSchema.parse(JSON.parse(raw));
-      queueMicrotask(() => setJobId(parsed.jobId));
-      queueMicrotask(() => void fetchStatus(parsed.jobId));
-    } catch {
-      localStorage.removeItem(LS_KEY);
-    }
-  }, [fetchStatus]);
+    if (!jobId || hasStatus) return;
+    queueMicrotask(() => {
+      void fetchStatus(jobId);
+    });
+  }, [jobId, hasStatus, fetchStatus]);
 
   // 폴링 — status가 queued/running일 때만 5초마다
   // status?.status (string primitive)를 dep으로 써서 같은 상태값이면 interval 재생성 안 함
   useEffect(() => {
-    if (!jobId || !status) return;
-    if (status.status === "done" || status.status === "error") {
+    if (!jobId || !renderStatus) return;
+    if (renderStatus === "done" || renderStatus === "error") {
       localStorage.removeItem(LS_KEY);
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
@@ -91,8 +100,7 @@ export function useRenderJob(): UseRenderJobResult {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId, status?.status, fetchStatus]);
+  }, [jobId, renderStatus, fetchStatus]);
 
   const startRender = useCallback(
     async (snapshot: ProjectSnapshot, exportId: string): Promise<void> => {

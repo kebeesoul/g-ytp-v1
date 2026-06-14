@@ -2,16 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { BackgroundSchema } from "@/lib/schema";
-import type { Background, OverlayPreset, ProjectSnapshot } from "@/lib/schema";
-import { FONTS } from "@/lib/thumbnail/constants";
-import { getOverlayCssPosition } from "@/lib/overlayPosition";
+import type { Background } from "@/lib/schema";
 
 interface BackgroundPickerProps {
   editorSessionId: string;
   value: Background | null;
   onChange: (bg: Background | null) => void;
-  overlayPreview?: OverlayPreset | null;
-  waveformStyle?: ProjectSnapshot["renderConfig"]["waveform"]["style"];
 }
 
 const DIM_DEFAULT = 0.25;
@@ -20,40 +16,24 @@ export function BackgroundPicker({
   editorSessionId,
   value,
   onChange,
-  overlayPreview,
-  waveformStyle,
 }: BackgroundPickerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canvasWrapperRef = useRef<HTMLDivElement>(null);
-  const [canvasDisplayWidth, setCanvasDisplayWidth] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null);
+  const [imgNaturalSize, setImgNaturalSize] = useState<{ storagePath: string; w: number; h: number } | null>(null);
   const [showCropEditor, setShowCropEditor] = useState(false);
 
-  const hasImage = value?.kind === "image" && imgNaturalSize !== null;
-
-  // Track canvas display width for overlay scaling
-  useEffect(() => {
-    const el = canvasWrapperRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      setCanvasDisplayWidth(entries[0]?.contentRect.width ?? 0);
-    });
-    ro.observe(el);
-    setCanvasDisplayWidth(el.offsetWidth);
-    return () => ro.disconnect();
-  }, []);
+  const currentImgNaturalSize =
+    value?.kind === "image" && imgNaturalSize?.storagePath === value.storagePath
+      ? { w: imgNaturalSize.w, h: imgNaturalSize.h }
+      : null;
+  const hasImage = currentImgNaturalSize !== null;
 
   // 미리보기 Canvas 렌더링
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !value) {
-      queueMicrotask(() => setImgNaturalSize(null));
-      // Clear canvas when image is removed
-      const ctx = canvas?.getContext("2d");
-      if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
 
@@ -69,22 +49,19 @@ export function BackgroundPicker({
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
-        setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+        setImgNaturalSize({ storagePath: value.storagePath, w: img.naturalWidth, h: img.naturalHeight });
         drawCoverImage(ctx, img, canvas.width, canvas.height, DIM_DEFAULT, cropX, cropY, cropW);
       };
       img.src = publicUrl;
     } else {
-      queueMicrotask(() => setImgNaturalSize(null));
       // 비디오 — 첫 프레임 캡처 (crop position not applied to video preview)
       const video = document.createElement("video");
       video.crossOrigin = "anonymous";
       video.muted = true;
-      video.preload = "metadata";
       video.src = publicUrl;
-      // loadeddata fires once enough data is buffered to render the first frame.
-      // seeked at t=0 is unreliable across browsers — the event may not fire.
+      video.currentTime = 0;
       video.addEventListener(
-        "loadeddata",
+        "seeked",
         () => {
           drawCoverVideo(ctx, video, canvas.width, canvas.height, DIM_DEFAULT);
         },
@@ -131,35 +108,32 @@ export function BackgroundPicker({
     <div className="flex flex-col gap-2">
       <span className="text-sm font-medium text-gray-300">배경</span>
 
-      {/* Canvas 미리보기 — 클릭/드래그로 업로드 가능 */}
-      <div
-        ref={canvasWrapperRef}
-        className="relative overflow-hidden rounded-md border border-gray-700 bg-gray-900 cursor-pointer"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-      >
+      {/* Canvas 미리보기 */}
+      <div className="relative overflow-hidden rounded-md border border-gray-700 bg-gray-900">
         <canvas
           ref={canvasRef}
-          width={1280}
-          height={720}
+          width={320}
+          height={180}
           className="w-full"
         />
         {!value && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-            <span className="text-xs text-gray-500">{uploading ? "업로드 중..." : "이미지 / 영상"}</span>
-            {!uploading && <span className="text-xs text-gray-600">클릭 또는 드래그</span>}
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
+            미리보기 없음
           </div>
-        )}
-        {overlayPreview && canvasDisplayWidth > 0 && (
-          <OverlayMock preset={overlayPreview} scale={canvasDisplayWidth / 1920} />
-        )}
-        {waveformStyle && waveformStyle !== "off" && canvasDisplayWidth > 0 && (
-          <WaveformMock style={waveformStyle} canvasDisplayWidth={canvasDisplayWidth} />
         )}
       </div>
 
-<input
+      {/* 업로드 Dropzone */}
+      <div
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className="flex cursor-pointer items-center justify-center rounded-md border-2 border-dashed border-gray-600 py-4 text-sm text-gray-500 transition hover:border-gray-400 hover:text-gray-300"
+      >
+        {uploading ? "업로드 중..." : "이미지 / 영상 (클릭 또는 드래그)"}
+      </div>
+
+      <input
         ref={fileInputRef}
         type="file"
         accept="image/*,video/*"
@@ -195,10 +169,10 @@ export function BackgroundPicker({
         </div>
       )}
 
-      {showCropEditor && value?.kind === "image" && imgNaturalSize && (
+      {showCropEditor && value?.kind === "image" && currentImgNaturalSize && (
         <CropEditor
           imageUrl={`/api/workspace-file/${value.storagePath}`}
-          naturalSize={imgNaturalSize}
+          naturalSize={currentImgNaturalSize}
           initialCropX={value.cropX ?? 0.5}
           initialCropY={value.cropY ?? 0.5}
           initialCropW={value.cropW ?? 1.0}
@@ -209,99 +183,6 @@ export function BackgroundPicker({
           onClose={() => setShowCropEditor(false)}
         />
       )}
-    </div>
-  );
-}
-
-// ─── Waveform Mock ───────────────────────────────────────────────────────────
-
-function WaveformMock({
-  style,
-  canvasDisplayWidth,
-}: {
-  style: string;
-  canvasDisplayWidth: number;
-}) {
-  // FFmpeg positions waveform at scale=240:240 in 1920x1080 space
-  // x=(W-w)/2, y=H*0.85-h/2
-  // Map to canvas internal space (1280x720): scale = 2/3
-  const WAVE_CANVAS_PX = 240 * (2 / 3); // 160px in 1280x720
-  const displayScale = canvasDisplayWidth / 1280;
-  const size = WAVE_CANVAS_PX * displayScale;
-  const canvasDisplayHeight = canvasDisplayWidth * (9 / 16);
-  const left = (canvasDisplayWidth - size) / 2;
-  const top = canvasDisplayHeight * 0.85 - size / 2;
-
-  return (
-    <div
-      className="pointer-events-none absolute"
-      style={{ left, top, width: size, height: size, zIndex: 10 }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`/waveforms/${style}-preview.png`}
-        alt={style}
-        style={{ width: "100%", height: "100%", objectFit: "contain" }}
-      />
-    </div>
-  );
-}
-
-// ─── Overlay Mock ─────────────────────────────────────────────────────────────
-
-function OverlayMock({ preset, scale }: { preset: OverlayPreset; scale: number }) {
-  const { layout, typography, color } = preset;
-  const rowGapPx = typography.lineHeight * scale;
-  const posStyle = getOverlayCssPosition(layout, scale);
-
-  const artistFont = FONTS.find((f) => f.name === typography.artistFontFamily);
-  const titleFont = FONTS.find((f) => f.name === typography.titleFontFamily);
-
-  return (
-    <div
-      className="pointer-events-none absolute inset-0"
-      style={{ zIndex: 10 }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          ...posStyle,
-        }}
-      >
-        <div
-          style={{
-            fontFamily: artistFont?.family ?? typography.artistFontFamily,
-            fontSize: typography.artistFontSize * scale,
-            fontWeight: typography.artistWeight,
-            lineHeight: `${typography.artistFontSize * scale}px`,
-            fontStyle: typography.artistItalic ? "italic" : "normal",
-            textDecoration: typography.artistUnderline ? "underline" : "none",
-            color: color.artist,
-            letterSpacing: typography.letterSpacing * scale,
-            whiteSpace: "nowrap",
-            textShadow: "0 1px 3px rgba(0,0,0,0.8)",
-          }}
-        >
-          Artist Name
-        </div>
-        <div
-          style={{
-            fontFamily: titleFont?.family ?? typography.titleFontFamily,
-            fontSize: typography.titleFontSize * scale,
-            fontWeight: typography.titleWeight,
-            lineHeight: `${typography.titleFontSize * scale}px`,
-            fontStyle: typography.titleItalic ? "italic" : "normal",
-            textDecoration: typography.titleUnderline ? "underline" : "none",
-            color: color.title,
-            letterSpacing: typography.letterSpacing * scale,
-            whiteSpace: "nowrap",
-            textShadow: "0 1px 3px rgba(0,0,0,0.8)",
-            marginTop: rowGapPx,
-          }}
-        >
-          Track Title
-        </div>
-      </div>
     </div>
   );
 }

@@ -9,17 +9,15 @@ interface TracklistExportProps {
 }
 
 export function TracklistExport({ snapshot }: TracklistExportProps) {
-  const [tracklist, setTracklist] = useState<Tracklist | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<
+    | { snapshot: ProjectSnapshot; tracklist: Tracklist; error: null }
+    | { snapshot: ProjectSnapshot; tracklist: null; error: string }
+    | null
+  >(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setError(null);
-      setTracklist(null);
-    });
 
     (async () => {
       try {
@@ -34,9 +32,11 @@ export function TracklistExport({ snapshot }: TracklistExportProps) {
         }
         const raw: unknown = await res.json();
         const parsed = TracklistSchema.parse(raw);
-        if (!cancelled) setTracklist(parsed);
+        if (!cancelled) setResult({ snapshot, tracklist: parsed, error: null });
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "tracklist 생성 실패");
+        if (!cancelled) {
+          setResult({ snapshot, tracklist: null, error: err instanceof Error ? err.message : "tracklist 생성 실패" });
+        }
       }
     })();
 
@@ -46,6 +46,7 @@ export function TracklistExport({ snapshot }: TracklistExportProps) {
   }, [snapshot]);
 
   async function handleCopy(): Promise<void> {
+    const tracklist = result?.snapshot === snapshot ? result.tracklist : null;
     if (!tracklist) return;
     const text = formatTracklistText(tracklist);
     try {
@@ -53,9 +54,12 @@ export function TracklistExport({ snapshot }: TracklistExportProps) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError("클립보드 복사 실패");
+      setResult({ snapshot, tracklist: null, error: "클립보드 복사 실패" });
     }
   }
+
+  const tracklist = result?.snapshot === snapshot ? result.tracklist : null;
+  const error = result?.snapshot === snapshot ? result.error : null;
 
   if (error) {
     return <p className="text-xs text-red-400">{error}</p>;
